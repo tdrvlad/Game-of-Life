@@ -78,24 +78,27 @@ class Environment:
 	def regen_resource(self):
 		self.resource += np.random.uniform() * self.resource_gen_rate * (env_max_resource - self.resource)
 		
-		#Smoothening surface
+		# Smoothening surface
 		self.resource = cv2.GaussianBlur(self.resource,(5,5),0)
 	
 
 	def consume_resource(self,agent,consumed,pos):
 		pos_x, pos_y = pos
 
+		# Argueable formula
 		# Rule by which Agents extract reosurce from environment
 		consumed = resource_consumption_rate * self.resource[pos_x,pos_y]
 		self.resource[pos_x,pos_y] -= consumed
 		self.resource = diffuse(self.resource, pos, radius = 2)
 
-		#Agent's inventory gets updated
+		# Agent's inventory gets updated
 		agent.inventory += consumed
 		
 	def update_danger(self):
 		for agent in self.agents:
 			pos_x, pos_y = agent.position
+
+			# Argueable formula
 			self.danger[pos_x, pos_y] -= danger_reduce * self.danger[pos_x, pos_y]
 			self.danger = diffuse(self.danger, agent.position, radius = 2)
 
