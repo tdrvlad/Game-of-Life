@@ -43,17 +43,21 @@ def gradient(h,x,y):
     return g[:,:,0] * x + g[:,:,1] * y
 
 class Perlin_Generator:
-    def __init__(self, dimension = 100, step = 5 , seed = 2):
-        self.dimension = dimension
+    def __init__(self, dimension = (100, 100), step = 5 , seed = 2):
+        self.dimension_x, self.dimension_y = dimension
         self.step = step
         self.seed = seed
 
     def get_map(self):
-        lin = np.linspace(0,self.step,self.dimension,endpoint=False)
-        x,y = np.meshgrid(lin,lin) # FIX3: I thought I had to invert x and y here but it was a mistake
+        lin_x = np.linspace(0,self.step,self.dimension_x,endpoint=False)
+        lin_y = np.linspace(0,self.step,self.dimension_y,endpoint=False)
 
-        return perlin(x,y,seed=2)
+        x,y = np.meshgrid(lin_x,lin_y) # FIX3: I thought I had to invert x and y here but it was a mistake
+
+        return perlin(x,y,seed = self.seed)
 
 if __name__ == '__main__':
-    plt.imshow(Perlin_Generator().get_map(), origin = 'lower')
+    map = Perlin_Generator(dimension = (150,100), seed = 1).get_map().repeat(4, axis=0).repeat(4, axis=1)
+    print(map)
+    plt.imshow(map, origin = 'lower')
     plt.show()

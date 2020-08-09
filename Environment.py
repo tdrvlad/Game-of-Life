@@ -5,132 +5,127 @@ import random
 from scipy.interpolate import barycentric_interpolate
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageOps
-from Agent import Sap
+from Perlin_Noise import Perlin_Generator
+import cv2
 
 
 # ----------- Environment Parameters ----------- 
 
-env_size = 600
+env_dimension = (600,400)
 
 env_max_danger = 10
 env_max_resource = 100
-env_max_resource_gen_rate = 10
+env_max_resource_gen_rate = 0.1
 
-resource_consumption_rate = 0.01
+resource_consumption_rate = 1
 
 patch_size = 50
 patch_space = 10
 
-
-# ----------- Costum Image handling functions ----------- 
-
-def show_image(image):
-	#PIL needs image to be flipped
-	ImageOps.flip(image).show()
-
-def save_image(image, file):
-	#PIL needs image to be flipped
-	ImageOps.flip(image).save(file)
+danger_reduce = 0.1
 
 
-# ----------- Sap Agent Image ----------- 
+def normalize(arr, new_min = 0,new_max = 1):
+	if arr.min() < 0:
+		arr -= arr.min()
+	arr /= arr.max()
 
-def import_sap_symbol(file):
-	symbol = Image.open('Images/Sap.png').convert('RGBA')
-	return symbol
-
-def colour_sap(symbol,colour = None):
-
-	#Generate random colour if none provided
-	if colour == None:
-		colour = list(np.random.choice(range(256), size=3))
-
-	#Unpacking image channels
-	data = np.array(symbol)   			
-	red, green, blue, alpha = data.T 	
-	white_areas = (red == 255) & (blue == 255) & (green == 255)
+	arr *= (new_max - new_min)
+	arr += new_min
 	
-	#Recolour white area
-	data[..., :-1][white_areas.T] = colour
+	return arr
 
-	#Generate recoloured Sap symbol
-	symbol = Image.fromarray(data)
-	symbol = ImageOps.flip(symbol.resize((patch_size, patch_size), Image.ANTIALIAS))
+def diffuse(arr, pos, radius = 1):
+	#Blur around a specific point of image
+	pos_x, pos_y = pos
 
-	return symbol
+	diffuse_area = arr[pos_x - radius : pos_x + radius + 1, pos_y - radius : pos_y + radius + 1]
+	diffuse_area = cv2.GaussianBlur(diffuse_area,(radius * 2 + 1,radius * 2 + 1),0)
+	arr[pos_x - radius : pos_x + radius + 1, pos_y - radius : pos_y + radius + 1] = diffuse_area
 
-def show_sap(image, symbol, position):
-	(x,y) = position 
-
-	#Adding variation to position
-	var = int(np.random.uniform(-1, 1) * patch_size) / 2 
-	position = (int(x + var), y)
-	
-	img.paste(tok, position, mask = tok)
-
-
-# ----------- Patch Class ----------- 
-
-class Patch:
-	def __init__(self, position, danger = 0, resource_gen_rate = 0, population = []):
-		self.position = position
-
-		if resource_gen_rate != 0 :
-			self.resource_gen_rate = resource_gen_rate
-		else:
-			self.resource_gen_rate = np.random.randint(env_max_resource_gen_rate + 1)
-
-		self.resource = env_max_resource * np.random.rand()
-
-		if danger != 0:
-			self.danger = danger
-		else:
-			self.danger = np.random.randint(env_max_danger + 1)
-
-		self.population = population
-
-	def grow_resource(self):
-		self.resource = self.resource * (1 + resource_gen_rate) * ( env_max_resource - self.resource)
-
-	def get_resource(self, efficiency = 1):
-		luck = np.random.uniform(0.5,1.5)
-		quant = self.resource * luck * efficiency * resource_consumption_rate
-		self.resource -= quant
-		return quant
-
-	def draw(self, drawing):
-		drawing.rectangle((self.position, 0, self.position + patch_size,  self.resource), fill=(0, 128, 0), outline=(0, 100, 0))
-
-	def 
-		
+	return arr
 
 class Environment:
-	def __init__(self, size = 100):
+	def __init__(self,dimension):
 
-		self.sap = import_sap_symbol('Images/Sap.png')
-		unit = patch_size + patch_space
-		no_patches = int(size / unit)
-		self.patches = []
+		self.dimension_x, self.dimension_y = dimension
 
-		for i in range(no_patches):
-			self.patches.append(Patch(position = i * unit))
-
-	def draw(self,image):
+		#Compressed Map (for computational purposes)
+		comp_r = 10
+		comp_x, comp_y = (int(self.dimension_x / comp_r), int(self.dimension_y / comp_r))
 		
-		drw = ImageDraw.Draw(image)
+		#Resource Generation Map
+		#self.resource_gen_rate = Perlin_Generator(dimension = (comp_x, comp_y), seed = 1).get_map().repeat(comp_r, axis=0).repeat(comp_r, axis=1)
+		self.resource_gen_rate = Perlin_Generator(dimension = (self.dimension_x, self.dimension_y), seed = 1).get_map()
+		self.resource_gen_rate = normalize(self.resource_gen_rate,0,env_max_resource_gen_rate)
 		
-		for patch in self.patches:
-			patch.draw(drw)
-			for i in range(np.random.randint(5) + 1):
-				draw_sap(image, position = (patch.position, int(patch.resource)))
+		#Danger Map
+		#self.danger = Perlin_Generator(dimension = (comp_x, comp_y), seed = 2).get_map().repeat(comp_r, axis=0).repeat(comp_r, axis=1)
+		self.danger = Perlin_Generator(dimension = (self.dimension_x, self.dimension_y), seed = 2).get_map()
+		self.danger = normalize(self.danger,0,env_max_danger)
 
-		show_image(image)
-		save_image(image,'Env.jpg')
+		#Resource Map
+		self.resource = Perlin_Generator(dimension = (self.dimension_x, self.dimension_y), seed = 3).get_map()
+		self.resource = normalize(self.resource,0,env_max_resource)
+		
+		#Agents in the Environment
+		self.agents = []
 
+	
+	def get_resource(self):
+		return self.resource
 
-env = Environment(env_size)
+	def regen_resource(self):
+		self.resource += np.random.uniform() * self.resource_gen_rate * (env_max_resource - self.resource)
+		
+		#Smoothening surface
+		self.resource = cv2.GaussianBlur(self.resource,(5,5),0)
+	
 
-image = Image.new('RGB', (env_size, 2 * env_max_resource))
+	def consume_resource(self,agent,consumed,pos):
+		pos_x, pos_y = pos
 
-env.draw(image)
+		# Rule by which Agents extract reosurce from environment
+		consumed = resource_consumption_rate * self.resource[pos_x,pos_y]
+		self.resource[pos_x,pos_y] -= consumed
+		self.resource = diffuse(self.resource, pos, radius = 2)
+
+		#Agent's inventory gets updated
+		agent.inventory += consumed
+		
+	def update_danger(self):
+		for agent in self.agents:
+			pos_x, pos_y = agent.position
+			self.danger[pos_x, pos_y] -= danger_reduce * self.danger[pos_x, pos_y]
+			self.danger = diffuse(self.danger, agent.position, radius = 2)
+
+	def draw_environment(self):
+		figure = plt.figure()
+		plt.title('Environment')
+		res = plt.imshow(self.resource, cmap = 'Greens', alpha = 0.8)
+		dng = plt.imshow(self.danger, cmap = 'Reds', alpha = 0.5)
+		
+	
+		plt.colorbar(res).set_label('Resource')
+		plt.colorbar(dng).set_label('Danger')
+		
+		for agent in self.agents:
+			pos_x, pos_y = agent.position
+			plt.plot(pos_x,pos_y,marker = r'$\bigodot$', markersize = 15, color = agent.color) 
+
+		plt.show()
+
+if __name__ == '__main__':
+
+env = Environment((200,200))
+
+for i in range(20):
+	x = np.random.uniform() * 200
+	y = np.random.uniform() * 200
+	env.agents.append(Agent((x,y)))
+
+before = env.resource
+
+env.draw_environment()
+
 
