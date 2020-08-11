@@ -16,14 +16,11 @@ env_dimension = (600,400)
 
 env_max_danger = 10
 env_max_resource = 100
-env_max_resource_gen_rate = 0.1
+env_max_resource_gen_rate = 0.2
 
-resource_consumption_rate = 10
+resource_consumption_rate = 2
 
-patch_size = 50
-patch_space = 10
-
-danger_reduce = 0.1
+danger_reduce = 1
 
 def scale_val(val,old_max,new_max, old_min = 0, new_min = 0):
 	return ((val - old_min) * (new_max - new_min)) / (old_max - old_min) + new_min
@@ -43,11 +40,12 @@ def normalize(arr, new_min = 0, new_max = 1):
 	
 	return arr
 
-def diffuse(arr, pos, radius = 1):
+def diffuse(environment, arr, pos, radius = 1):
 	#Blur around a specific point of image
 	pos_x, pos_y = pos
 
-	max_x, max_y = env_dimension
+	max_x, max_y = environment.dimension_x, environment.dimension_y
+
 	if pos_x + radius < max_x and pos_x - radius > 0 and pos_y + radius < max_y and pos_y - radius > 0:
 
 		diffuse_area = arr[pos_x - radius : pos_x + radius + 1, pos_y - radius : pos_y + radius + 1]
@@ -61,10 +59,7 @@ class Environment:
 
 		self.dimension_x, self.dimension_y = dimension
 
-		# Compressed Map (for computational purposes)
-		comp_r = 10
-		comp_x, comp_y = (int(self.dimension_x / comp_r), int(self.dimension_y / comp_r))
-		
+			
 		# Resource Generation Map
 		#self.resource_gen_rate = Perlin_Generator(dimension = (comp_x, comp_y), seed = 1).get_map().repeat(comp_r, axis=0).repeat(comp_r, axis=1)
 		self.resource_gen_rate = Perlin_Generator(dimension = (self.dimension_x, self.dimension_y), seed = 1).get_map()
@@ -83,6 +78,8 @@ class Environment:
 		self.max_social = 1
 		self.max_inventory = 1
 		self.max_reputation = 1
+
+		self.max_resource = self.resource.sum()
 	
 	def update_parameters(self, all_agents):
 		self.max_social = 0
@@ -101,10 +98,12 @@ class Environment:
 				self.max_reputation = agent.max_reputation
 	
 	def regen_resource(self):
-		self.resource += np.random.uniform() * self.resource_gen_rate * (env_max_resource - self.resource)
+
+		instant_rate = self.max_resource / self.resource.sum()
+		self.resource += self.resource_gen_rate * instant_rate
 		
 		# Smoothening surface
-		self.resource = cv2.GaussianBlur(self.resource,(5,5),0)
+		self.resource = cv2.GaussianBlur(self.resource,(3,3),0)
 	
 
 	def consume_resource(self,position):
@@ -114,7 +113,7 @@ class Environment:
 		# Rule by which Agents extract reosurce from environment
 		consumed = resource_consumption_rate * self.resource[pos_x,pos_y]
 		self.resource[pos_x,pos_y] -= consumed
-		self.resource = diffuse(self.resource, (pos_x, pos_y), radius = 2)
+		self.resource = diffuse(self, self.resource, (pos_x, pos_y), radius = 3)
 
 		# Agent's inventory gets updated
 		return consumed
@@ -132,19 +131,32 @@ class Environment:
 		
 		plt.clf()
 
+		plt.figure()
+
+		plt.rcParams["figure.figsize"] = [20,15]
+		plt.axis('off')
+
 		plt.title('Environment')
-		res = plt.imshow(self.resource, cmap = 'Greens', alpha = 0.8)
-		dng = plt.imshow(self.danger, cmap = 'Reds', alpha = 0.5)
+
+		res = plt.imshow(self.resource, cmap = 'Greens', alpha = 1)
+		dng = plt.imshow(self.danger, cmap = 'Reds', alpha = 0.3)
 		
 		
 		plt.colorbar(res).set_label('Resource')
 		plt.colorbar(dng).set_label('Danger')
 		
+		positions = []
 		for agent_id, agent in all_agents.items():
-			
-			pos_x, pos_y = agent.position
-			agents = plt.plot(pos_x,pos_y,marker = r'$\bigodot$', markersize = 15, color = agent.color) 
+		
 
+			pos_x, pos_y = agent.position
+			if (pos_x, pos_y) in positions:
+				pos_x += 0.5
+				pos_y += 0.5
+			positions.append((pos_x,pos_y))
+
+			agents = plt.plot(pos_y,pos_x, marker = r'$\bigodot$', markersize = 35, color = agent.color) 
+		
 		if image_file:
 			plt.savefig(image_file)
 

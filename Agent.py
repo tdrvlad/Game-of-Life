@@ -2,9 +2,11 @@ import numpy as np
 import random
 from scipy.interpolate import barycentric_interpolate
 import matplotlib.pyplot as plt
+import math
 
 total_no_agents = 0
 invent_to_needs = 2
+step = 1
 
 def distance(pos1,pos2):
 	x1, y1 = pos1
@@ -43,7 +45,7 @@ class Sap:
 		'''
 
 		self.ident = None
-		self.color = list(np.random.choice(range(256), size=3) / 255) if color is None else color
+		self.color = list(np.random.uniform(size=3)) if color is None else color
 		self.acquaint = {}
 		self.family = {}
 		self.position = position
@@ -56,13 +58,9 @@ class Sap:
 
 		#self.brain = tf.Sequential()
 
-	def decide(self):
-		# To be modified
-		self.hunger = 1 / self.needs
-
-
 	# Unit Time Run
 	def life_tick(self,all_agents, environment):
+
 		self.age += 1 / 365
 
 		self.update_maslow()
@@ -71,8 +69,8 @@ class Sap:
 		self.update_actualization(all_agents, environment)
 		
 		vec_x, vec_y = self.vecinity(all_agents, environment)
-		vec_x *= np.random.uniform()
-		vec_y *= np.random.uniform()
+		#vec_x *= np.random.uniform(-1, 1)
+		#vec_y *= np.random.uniform(-1, 1)
 
 		self.move(vec_x, vec_y, environment)
 		self.gather_res(environment)
@@ -96,11 +94,13 @@ class Sap:
 		new_social = 0
 
 		for agent_id in self.acquaint.keys():
-			agent = all_agent[agent_id]
+			agent = all_agents[agent_id]
 
 			# Argueable formula
 			# Social closeness - the closer to friendly agents the better
-			new_social = distance(self.position, agent.position) * acquaint[agent.ident]
+			dist = distance(self.position, agent.position)
+			if dist != 0:
+				new_social = (1 / dist) * self.acquaint[agent.ident]
 
 		self.social = (self.social + new_social ) / 2
 		
@@ -133,15 +133,20 @@ class Sap:
 	def vecinity(self, all_agents, environment):
 		# Computes a score for the directions of movement
 
+		pos_x, pos_y = self.position
 		vecinity_x = 0
 		vecinity_y = 0
-		for agent_id, agent in all_agents.items():
+
+		for agent_id, score in self.acquaint.items():
+			agent = all_agents[agent_id]
 			x, y = agent.position
 			# Only applies to agents known by self
-			if agent_id in self.acquaint.keys():
-				# Argueable formula
-				vecinity_x += 1 / (x - self.x) * score(self,agent) * environment.resource[x,y]
-				vecinity_y += 1 / (y - self.y) * score(self,agent) * environment.resource[x,y]
+			
+			# Argueable formula
+			if x - pos_x != 0:
+				vecinity_x += 1 / (x - pos_x) * score * environment.resource[x,y]
+			if y - pos_y != 0:
+				vecinity_y += 1 / (y - pos_y) * score * environment.resource[x,y]
 
 		return vecinity_x, vecinity_y
 
@@ -149,22 +154,38 @@ class Sap:
 	# Actions
 
 	def move(self,x,y,environment):
+		if x > step:
+			x = step
+		elif x < -step:
+			x = -step
+		else:
+			pass
+
+		if y > step:
+			y = step
+		elif y < -step:
+			y = -step
+		else:
+			pass
+
 		pos_x, pos_y = self.position
 		
 		# Make sure agent stays in environment boundries
-		if pos_x + x > environment.dimension_x:
-			pos_x = environment.dimension_x
+		if pos_x + x >= environment.dimension_x:
+			pos_x = environment.dimension_x - 1
 		elif pos_x + x < 0:
 			pos_x = 0
 		else:
 			pos_x += x
 
-		if pos_y + y > environment.dimension_y:
-			pos_y = environment.dimension_y
+		if pos_y + y >= environment.dimension_y:
+			pos_y = environment.dimension_y - 1
 		elif pos_y + y < 0:
 			pos_y = 0
 		else:
 			pos_y += y
+
+		self.position = (int(pos_x), int(pos_y))
 		
 	def eat(self, hunger):
 		quant = np.random.uniform(0.8,1.2) * hunger
@@ -181,7 +202,7 @@ class Sap:
 
 	def gather_res(self, environment):
 		# Arguable formula
-		
+	
 		self.inventory += environment.consume_resource(self.position) * self.social
 
 		# Value validation
@@ -192,7 +213,7 @@ class Sap:
 
 	def update_acquaint(self, agent_id, interact_score):
 		if agent_id in self.acquaint.keys():
-			self.acquaint[agent_id] += interact_score
+			self.acquaint[agent_id] = (self.acquaint[agent_id] + interact_score) / 2
 		else:
 			self.acquaint[agent_id] = interact_score
 
@@ -215,10 +236,23 @@ class Sap:
 		# Cooperating agents will converge to simmilar colors
 		for agent_id, score in self.acquaint.items():
 
-			color = all_agents[agent_id].color
+			agent = all_agents[agent_id]
+			oth_color = agent.color
+
+			dist = distance(self.position,agent.position)
+			if dist:
+				score = score  / math.sqrt(dist)
 			
-			# Argueable formula
-			self.color = [c * my_c * score for c, my_c in zip(color, self.color)]
+				# Argueable formula
+				color_delta = [oth_c - my_c for oth_c, my_c in zip(oth_color,self.color)]
+				
+				# Arguable formula
+				#self.color = [my_c + c_delta * score / oth_c for my_c, c_delta, oth_c in zip(self.color, color_delta, agent.color)]
+				self.color = [my_c + (c_delta * score / (my_c + oth_c + 0.01)) for my_c, c_delta, oth_c in zip(self.color, color_delta, oth_color)]
+
+				self.color = [0 if c < 0 else c for c in self.color]
+				self.color = [1 if c > 1 else c for c in self.color]
+
 
 
 
