@@ -8,6 +8,11 @@ from PIL import Image, ImageDraw, ImageOps
 from Perlin_Noise import Perlin_Generator
 import cv2
 
+from Utils import Utils
+utils = Utils()
+normalize = utils.normalize
+distance = utils.distance
+scale_val = utils.scale_val
 
 
 # ----------- Environment Parameters ----------- 
@@ -22,23 +27,6 @@ resource_consumption_rate = 2
 
 danger_reduce = 1
 
-def scale_val(val,old_max,new_max, old_min = 0, new_min = 0):
-	return ((val - old_min) * (new_max - new_min)) / (old_max - old_min) + new_min
-
-def scale_arr(arr,new_max, new_min = 0):
-	old_max = arr.max()
-	old_min = arr.min()
-	return ((arr - old_min) * (new_max - new_min)) / (old_max - old_min) + new_min
-
-def normalize(arr, new_min = 0, new_max = 1):
-	if arr.min() < 0:
-		arr -= arr.min()
-	arr /= arr.max()
-
-	arr *= (new_max - new_min)
-	arr += new_min
-	
-	return arr
 
 def diffuse(environment, arr, pos, radius = 1):
 	#Blur around a specific point of image
@@ -78,15 +66,18 @@ class Environment:
 		self.max_social = 1
 		self.max_inventory = 1
 		self.max_reputation = 1
+		self.max_damger = env_max_danger
+		self.max_maslow = 1
 
 		self.max_resource = self.resource.sum()
 	
-	def update_parameters(self, all_agents):
+	def update_parameters(self, sim):
 		self.max_social = 0
 		self.max_inventory = 0
 		self.max_reputation = 0
+		self.max_maslow = 0
 
-		for agent_id, agent in all_agents.items():
+		for agent_id, agent in sim.all_agents.items():
 						
 			if agent.social > self.max_social:
 				self.max_social = agent.social
@@ -94,8 +85,11 @@ class Environment:
 			if agent.inventory > self.max_inventory:
 				self.max_inventory = agent.inventory
 
-			if agent.reputation > self.reputation:
-				self.max_reputation = agent.max_reputation
+			if agent.reputation > self.max_reputation:
+				self.max_reputation = agent.reputation
+
+			if agent.maslow > self.max_maslow:
+				self.max_maslow = agent.maslow
 	
 	def regen_resource(self):
 
@@ -118,8 +112,8 @@ class Environment:
 		# Agent's inventory gets updated
 		return consumed
 		
-	def update_danger(self, all_agents):
-		for agent_id, agent in all_agents.items():
+	def update_danger(self, sim):
+		for agent_id, agent in sim.all_agents.items():
 			
 			pos_x, pos_y = agent.position
 
@@ -127,7 +121,39 @@ class Environment:
 			self.danger[pos_x, pos_y] -= danger_reduce * self.danger[pos_x, pos_y]
 			self.danger = diffuse(self.danger, agent.position, radius = 2)
 
-	def draw_environment(self, all_agents, image_file = None):
+	def draw_agent(self, agent):
+
+		pos_x, pos_y = agent.position
+		plt.plot(pos_y,pos_x, marker = r'$\bigodot$', markersize = 35, color = agent.color) 
+		
+		agent_info = 'Mslw: ' + str(int(agent.maslow * 10))
+		plt.text(pos_y,pos_x,agent_info, fontsize=15)
+
+
+	def draw_relationship(self, agent_src, agent_dst, score):
+
+		# Relationships are shown with dotted lines.
+
+		# Relationship line color (green - friend, red - foe)
+		if score > 0:
+			b = 0
+			r = 0
+			g = 1
+		else:
+			b = 0
+			r = 1
+			g = 0
+
+		# Relationship line transparency (intensity)
+		if abs(score) > 0.7: 
+			alph = abs(score) / 2
+
+			src_x, src_y = agent_src.position 
+			dst_x, dst_y = agent_dst.position
+
+			plt.plot([dst_y, src_y], [dst_x, src_x], color = (r,g,b, alph), linestyle =':', linewidth=3)
+
+	def draw_environment(self, sim, image_file = None):
 		
 		plt.clf()
 
@@ -145,22 +171,27 @@ class Environment:
 		plt.colorbar(res).set_label('Resource')
 		plt.colorbar(dng).set_label('Danger')
 		
-		positions = []
-		for agent_id, agent in all_agents.items():
+		for agent_id, agent in sim.all_agents.items():
+		
+			self.draw_agent(agent)
+
+			for other_agent_id, score in agent.acquaint.items():
+				try:
+					other_agent = sim.all_agents[other_agent_id]
+					self.draw_relationship(agent, other_agent, score)
+				except:
+					pass
+
 		
 
-			pos_x, pos_y = agent.position
-			if (pos_x, pos_y) in positions:
-				pos_x += 0.5
-				pos_y += 0.5
-			positions.append((pos_x,pos_y))
+		#env_info = 'No. agents: ' + str(len(sim.all_agents))
+		#plt.text(0,0,env_info, fontsize=20)
 
-			agents = plt.plot(pos_y,pos_x, marker = r'$\bigodot$', markersize = 35, color = agent.color) 
-		
 		if image_file:
 			plt.savefig(image_file)
 
-		return plt
+		plt.close()
+	
 		
 
 
