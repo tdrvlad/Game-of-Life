@@ -1,6 +1,14 @@
+
+import tensorflow as tf
+
+import sys
+
+sys.stdout.flush()
+
 import numpy as np
 #from Environment import Environment
-from Agent import Sap
+from Agent import Sap, Sap_Interactions
+
 from Environment import Environment
 import numpy as np
 import matplotlib.pyplot as plt
@@ -22,7 +30,11 @@ import math
 image_file = 'Env_Snapshots/Tick'
 
 class Simulation:
-	def __init__(self, dimension = 200 ,no_agents = 10 ,time_units = 40):
+	def __init__(self, dimension = 200 ,no_agents = 20 ,time_units = 40):
+
+		#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction = 1 / (no_agents + 1))
+		#sess = tf.Session(config = tf.ConfigProto(gpu_options = gpu_options))
+
 		self.dimension = dimension
 		self.no_agents = no_agents
 		self.time_units = time_units
@@ -30,6 +42,7 @@ class Simulation:
 		self.all_agents = {}
 		self.agents_to_remove = []
 
+		interact = Sap_Interactions(self)
 
 
 	def add_agent(self, agent):
@@ -43,37 +56,51 @@ class Simulation:
 
 		self.all_agents[agent.ident] = agent
 
+
+	def delete_agents(self):
+
+		for agent_id, agent in self.all_agents.items():
+			for ag_id in self.agents_to_remove:
+				agent.acquaint.pop(ag_id, None)
+
+		for agent_id in self.agents_to_remove:
+			print('Sap ', agent_id, ' died.')
+			self.all_agents.pop(agent_id, None)
+
+		self.agents_to_remove = []
+
+
 	def init_sim(self):
 
 		self.env = Environment((self.dimension,self.dimension))
 
 		for i in range(self.no_agents):
-			x = int(np.random.randint(0,self.dimension))
-			y = int(np.random.randint(0,self.dimension))
-			self.add_agent(Sap((x,y)))
-
-	def run_sim_unit(self, t, save_path):
-
-		file = save_path + str(t) + '.png'
-		self.env.draw_environment(self, file)
+			x = int(np.random.uniform(2 * self.dimension / 10, 9 * self.dimension / 10))
+			y = int(np.random.uniform(2 * self.dimension / 10, 9 * self.dimension / 10))
+			self.add_agent( Sap(self, (x,y) ) )
 
 		for agent_id, agent in self.all_agents.items():
-			for oth_agent_id, oth_agent in self.all_agents.items():
-				if distance(agent.position, oth_agent.position) < math.sqrt(self.dimension):
-					agent.update_acquaint(oth_agent_id, np.random.uniform(-1,1))
-					oth_agent.update_acquaint(agent_id, np.random.uniform(-1,1))
+			oth_agent_id = np.random.choice(list(self.all_agents.keys()))
+			agent.acquaint[oth_agent_id] = np.random.uniform(-1,1)
+
+			oth_agent_id = np.random.choice(list(self.all_agents.keys()))
+			agent.acquaint[oth_agent_id] = np.random.uniform(-1,1)
+
+
+	def run_sim_unit(self, t, save_path, visualize):
+
+		print('Simtime: {}'.format(t), flush = True)
+		if visualize:
+			file = save_path + str(t) + '.png'
+			self.env.draw_environment(self, file)
+		else:
+			self.env.draw_environment(self)
 
 		for agent_id, agent in self.all_agents.items():
-			alive = agent.life_tick(self)
+			alive = agent.life_tick()
 				
-			if not alive:
+			if alive == 0:
 				self.agents_to_remove.append(agent_id)
-				print('Sap ', agent_id, ' died.')
-
-		for agent_id in self.agents_to_remove:
-			del self.all_agents[agent_id]
-
-		self.agents_to_remove = []
 
 		self.env.regen_resource()
 
@@ -100,17 +127,24 @@ class Simulation:
 		
 		#plt.show()
 
-	def run_all(self, save_path):
+
+	def run_all(self, save_path, visualize = False):
 
 		self.init_sim()
 
 		for t in range(self.time_units):
-			self.run_sim_unit(t, save_path)
-
-		self.animate_evolution(save_path)
+			self.run_sim_unit(t, save_path, visualize = visualize)
+			#self.delete_agents()
+		if visualize:
+			self.animate_evolution(save_path)
 
 
 if __name__ == '__main__':
 
-	sim = Simulation(time_units = 50, no_agents = 25)
-	sim.run_all(image_file)
+	import time
+	start_time = time.time()
+
+	sim = Simulation(time_units = 25, no_agents = 3)
+	sim.run_all(image_file, visualize = True)
+
+	print('Run time: %s seconds' % (time.time() - start_time))
