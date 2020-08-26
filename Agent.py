@@ -1,13 +1,17 @@
+import tensorflow as tf
 import numpy as np
-import random
-from scipy.interpolate import barycentric_interpolate
-import matplotlib.pyplot as plt
 import math
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
+import sys
+import time
+import os
+import glob
 import yaml
 
-import tensorflow as tf
-
+from numpngw import write_apng
+import gif
 
 from Utils import Utils
 from Agent_Brain import Brain
@@ -19,25 +23,27 @@ scale_val = utils.scale_val
 roulette_selection = utils.roulette_selection
 gradient = utils.gradient
 
-total_no_agents = 0
-invent_to_energy = 2
-env_to_invent = 1
-step = 1
-time_unit_needs = 0.1
-random_death_chance = 0
-invent_fract = 0.5
-energy_cons_rate = 0.3
+parameter_file = 'Parameters.yaml'
 
+# ----------- Agent Parameters ----------- 
+
+param = yaml.load(open(parameter_file), Loader = yaml.FullLoader)
+res_to_invent = param['res_to_invent']
+invent_to_energy = param['invent_to_energy']
+invent_fract = param['invent_fract']
+
+ag_basic_needs = param['ag_basic_needs']
+ag_move_needs = param['ag_move_needs']
+ag_random_death = param['ag_random_death']
+
+ag_max_sight = param['ag_sight']
+ag_max_step = param['ag_max_step']
+ag_max_invent = param['ag_max_invent']
+# ag_max_invent = param['ag_max_invent']
 
 phys_inputs = 3
 phys_outputs = 5
 
-agent_sight = 10
-
-class Eater:
-	def __init__(self, sim, position):
-		self.sim = sim
-		self.position = position
 
 class Sap:
 	def __init__(self, sim, position,color = None):
@@ -57,10 +63,8 @@ class Sap:
 		# Physical Atttributes
 		self.position = position
 		self.inventory = np.random.uniform(0.3,0.6)
-
-
-		#self.sight = int(math.sqrt(sim.dimension))
-		self.sight = agent_sight
+		self.max_invent = ag_max_invent
+		self.sight = ag_max_sight
 
 		# Social Attributes
 		self.acquaint = {}
@@ -113,7 +117,7 @@ class Sap:
 		
 		
 		#Update current state
-		pos_y, pos_x = self.position # Agent's position
+		pos_x, pos_y = self.position # Agent's position
 		curr_resource = self.sim.env.resource[pos_x, pos_y] 
 
 		self.phys_new_state = np.array([curr_resource, self.inventory, self.energy]).reshape(1, phys_inputs)
@@ -123,7 +127,7 @@ class Sap:
 			self.phys_brain.remember(
 				state = self.phys_last_state, 
 				action = self.phys_act, 
-				reward = -self.energy,
+				reward = self.energy * self.inventory,
 				new_state = self.phys_new_state
 				)
 
@@ -158,11 +162,9 @@ class Sap:
 		self.age += 1 / 365
 
 		# Attribute updates
-
-		#self.update_inventory()
 		self.update_maslow()
 		self.update_social()
-		self.compute_reputation()
+		self.update_reputation()
 		self.update_actualization()
 		self.update_color()
 
@@ -180,10 +182,13 @@ class Sap:
 
 		# Energy Consumption
 		x, y = self.position
-		self.energy -= time_unit_needs * self.sim.env.danger[x,y] * energy_cons_rate
+		self.energy -= ag_basic_needs * self.sim.env.danger[x,y]
 
 		# Arbitrary death due to environment danger
-		if self.energy <= 0 or np.random.uniform() < random_death_chance * self.sim.env.danger[x,y]:
+		if self.energy < 0.1 and self.inventory > 0.1:
+			self.eat()
+
+		if self.energy < 0.1 or np.random.uniform() < ag_random_death * self.sim.env.danger[x,y]:
 			return 0 	# Dead
 		else:
 			return 1	# Alive
@@ -198,11 +203,6 @@ class Sap:
 		# Function that creates memory instance of internal state at the time of interaction
 		self.memory.append((agent_id, self.maslow))
 
-
-	def update_inventory(self):
-
-		self.inventory = scale_val(self.inventory, self.sim.env.max_inventory, 1)
-	
 
 	def update_maslow(self, base = 2):
 
@@ -239,7 +239,7 @@ class Sap:
 		self.social = scale_val(self.social, self.sim.env.max_social,1)
 
 
-	def compute_reputation(self):
+	def update_reputation(self):
 		# Compute a reputation 
 		rep = 0
 		no = 0
@@ -257,7 +257,7 @@ class Sap:
 
 	def update_actualization(self):
 		# Arguable formula
-		self.actualization = (self.actualization + self.compute_reputation()) / 2
+		self.actualization = (self.actualization + self.update_reputation()) / 2
 
 		# Has to include the (eventual) offspring maslow scores
 
@@ -310,11 +310,11 @@ class Sap:
 
 		#print('dx: ', d_x, ', dy: ', d_y)
 		
-		if abs(d_x) > step:
-			d_x = step * np.sign(d_x)
+		if abs(d_x) > ag_max_step:
+			d_x = ag_max_step * np.sign(d_x)
 
-		if abs(d_y) > step:
-			d_y = step * np.sign(d_y)
+		if abs(d_y) > ag_max_step:
+			d_y = ag_max_step * np.sign(d_y)
 
 		pos_x, pos_y = self.position
 		
@@ -336,14 +336,12 @@ class Sap:
 
 
 		self.position = (pos_x, pos_y)
-		self.energy -= math.sqrt(d_x ** 2 + d_y ** 2) * energy_cons_rate / 10
+		self.energy -= math.sqrt(d_x ** 2 + d_y ** 2) * ag_move_needs
 		
 
 	def eat(self):
 	
-		
 		self.energy += self.inventory / 2 * invent_to_energy
-		self.inventory /= 2
 		
 		# Value validation
 		if self.energy > 1:
@@ -353,14 +351,14 @@ class Sap:
 		# Arguable formula
 	
 		# Gathering resource is more efficient while near collaborating agents
-		self.inventory += env_to_invent * self.sim.env.consume_resource(self.position)
+		self.inventory += self.sim.env.consume_resource(self.position) * res_to_invent
 
 		# Value validation
 		if self.inventory < 0:
 			self.inventory = 0
 
-		self.inventory = scale_val(self.inventory, self.sim.env.max_inventory, 1)
-
+		if self.inventory > self.max_invent:
+			self.inventory = self.max_invent
 
 	def learn_about(self, from_agent_id, about_agent_id, score):
 
@@ -423,7 +421,7 @@ class Sap:
 				agent = self.sim.all_agents[agent_id]
 				oth_color = agent.color
 
-				dist = distance(self.position,agent.position)
+				dist = distance(self.position, agent.position)
 				if dist:
 					score = score  / math.sqrt(dist)
 				

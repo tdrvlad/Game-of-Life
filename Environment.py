@@ -1,37 +1,41 @@
-#For drawing Bezier Curve
-
-import os
-import yaml
-
+import tensorflow as tf
 import numpy as np
-import random
-from scipy.interpolate import barycentric_interpolate
+import math
 import matplotlib.pyplot as plt
-from PIL import Image, ImageDraw, ImageOps
-from Perlin_Noise import Perlin_Generator
+import matplotlib.animation as animation
 import cv2
 
+import sys
+import time
+import os
+import glob
+import yaml
+
+from numpngw import write_apng
+import gif
+
 from Utils import Utils
+from Perlin_Noise import Perlin_Generator
+
 utils = Utils()
 normalize = utils.normalize
 distance = utils.distance
 scale_val = utils.scale_val
 
+parameter_file = 'Parameters.yaml'
 
 # ----------- Environment Parameters ----------- 
 
-env_dimension = (600,400)
+param = yaml.load(open(parameter_file), Loader = yaml.FullLoader)
 
-env_max_danger = 1
-env_max_resource = 1
-env_max_resource_gen_rate = 0.1
+env_max_danger = param['env_max_danger']
+env_max_resource = param['env_max_resource']
+env_max_resource_gen_rate = param['env_max_resource_gen_rate']
+danger_reduce = param['danger_reduce']
+env_dimension = param['dimension_x'], param['dimension_y']
 
-resource_consumption_rate = 1
-
-danger_reduce = 1
-
-max_gathered = 1
-
+font_size = 40
+fig_size = font_size
 
 def diffuse(environment, arr, pos, radius = 1):
 	#Blur around a specific point of image
@@ -42,7 +46,7 @@ def diffuse(environment, arr, pos, radius = 1):
 	if pos_x + radius < max_x and pos_x - radius > 0 and pos_y + radius < max_y and pos_y - radius > 0:
 
 		diffuse_area = arr[pos_x - radius : pos_x + radius + 1, pos_y - radius : pos_y + radius + 1]
-		diffuse_area = cv2.GaussianBlur(diffuse_area,(radius * 2 + 1,radius * 2 + 1),0)
+		diffuse_area = cv2.GaussianBlur(diffuse_area,(radius * 2 + 1,radius * 2 + 1), 0)
 		arr[pos_x - radius : pos_x + radius + 1, pos_y - radius : pos_y + radius + 1] = diffuse_area
 
 	return arr
@@ -51,24 +55,22 @@ def diffuse(environment, arr, pos, radius = 1):
 class Environment:
 	def __init__(self, parameter_file):
 
-		f = open(parameter_file)
-		param = yaml.load(f, Loader = yaml.FullLoader)
-		
-		self.dimension_x, self.dimension_y = param['dimension_x'], param['dimension_y']
+		self.dimension_x, self.dimension_y = env_dimension
 
 		print('Creating Environment with size ({},{})'.format(self.dimension_x, self.dimension_y))
 
 		# Resource Generation Map
-		self.resource_gen_rate = Perlin_Generator(dimension = (self.dimension_y, self.dimension_x), seed = 1).get_map()
+		self.resource_gen_rate = Perlin_Generator(dimension = (self.dimension_x, self.dimension_y), seed = 1).get_map().T
 		self.resource_gen_rate = normalize(self.resource_gen_rate, 0, env_max_resource_gen_rate)
-		
+
 		# Danger Map
-		self.danger = Perlin_Generator(dimension = (self.dimension_y, self.dimension_x), seed = 2).get_map()
+		self.danger = Perlin_Generator(dimension = (self.dimension_x, self.dimension_y), seed = 2).get_map().T
 		self.danger = normalize(self.danger,0,env_max_danger)
 
 		# Resource Map
-		self.resource = Perlin_Generator(dimension = (self.dimension_y, self.dimension_x), seed = 3).get_map()
+		self.resource = Perlin_Generator(dimension = (self.dimension_x, self.dimension_y), seed = 3).get_map().T
 		self.resource = normalize(self.resource,0,env_max_resource)
+
 		
 		# Dynamic parameters of Agents
 		self.max_social = 1
@@ -119,10 +121,10 @@ class Environment:
 
 		# Argueable formula
 		# Rule by which Agents extract reosurce from environment
-		consumed = resource_consumption_rate * self.resource[pos_x,pos_y]
+		consumed = self.resource[pos_x,pos_y] / env_max_resource * np.random.uniform(0.7, 1.3) 
 
-		if consumed > max_gathered:
-			consumed = max_gathered
+		if consumed > self.resource[pos_x, pos_y]:
+			consumed = self.resource[pos_x, pos_y]
 
 		self.resource[pos_x,pos_y] -= consumed
 		self.resource = diffuse(self, self.resource, (pos_x, pos_y), radius = 2)
@@ -144,11 +146,11 @@ class Environment:
 	def draw_agent(self, agent):
 
 		pos_x, pos_y = agent.position
-		plt.plot(pos_x,pos_y, marker = r'$\bigodot$', markersize = 35, color = agent.color) 
+		plt.plot(pos_x,pos_y, marker = r'$\bigodot$', markersize = font_size, color = agent.color) 
 		
-		agent_info = 'En: ' + str(int(agent.energy*10)) + '\n' + 'Inv: ' + str(int(agent.inventory * 10))
-		
-		plt.text(pos_x + 4 ,pos_y + 4, agent_info, fontsize=22)
+		#agent_info = 'En: ' + str(int(agent.energy*10)) + '\n' + 'Inv: ' + str(int(agent.inventory * 10))
+		agent_info = str(int(self.resource[pos_x,pos_y] * 100))
+		plt.text(pos_x + 3 ,pos_y + 3, agent_info, fontsize = 0.85 * font_size )
 
 
 	def draw_relationship(self, agent_src, agent_dst, score):
@@ -183,25 +185,24 @@ class Environment:
 	def draw_environment(self, sim, image_file = None, tick = None):
 		
 		plt.clf()
+		plt.figure(figsize = (fig_size, fig_size), dpi=25)
 
-		plt.figure(figsize = (15,15), dpi=25)
+		#plt.rcParams["figure.figsize"] = [40,40]
+		#plt.axis('off')
 
-		plt.rcParams["figure.figsize"] = [20,15]
-		plt.axis('off')
-
-		plt.title('Environment', fontsize = 22)
+		plt.title('Environment', fontsize = font_size)
 		
 
-		plt.gca().invert_yaxis()
+		#plt.gca().invert_yaxis()
 
-		plt.rc('xtick', labelsize=22)
-		plt.rc('ytick', labelsize=22)
+		plt.rc('xtick', labelsize = font_size)
+		plt.rc('ytick', labelsize = font_size)
 
 		res = plt.imshow(self.resource.T, cmap = 'Greens', alpha = 1)
-		dng = plt.imshow(self.danger.T, cmap = 'Reds', alpha = 0.4)
+		dng = plt.imshow(self.danger.T, cmap = 'Reds', alpha = 0)
 
 		if tick is not None:
-			plt.text(3 ,-5, 'Tick: {}'.format(tick), fontsize=18)
+			plt.text(3 ,-5, 'Tick: {}'.format(tick), fontsize = font_size)
 
 		plt.colorbar(res).set_label('Resource')
 		plt.colorbar(dng).set_label('Danger')

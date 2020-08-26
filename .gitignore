@@ -1,7 +1,7 @@
 *.gif
 /env
 /__pycache__
-/Env_Snapshots
+/Snapshots
 /Images
 /History
 /Virtual_Environment

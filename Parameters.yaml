@@ -1,11 +1,31 @@
 # Simulation Parameters
 
-no_agents : 3
-time_units : 10
+no_agents : 10
+time_units : 100
 
 # Environment Parameters
 
-dimension_x : 350
-dimension_y : 250
+dimension_x : 300
+dimension_y : 200
+
+danger_reduce : 1
+
+env_max_danger : 1
+env_max_resource : 1
+env_max_resource_gen_rate : 0.3
 
 # Agent Parameters
+
+res_to_invent : 1.5
+invent_to_energy : 3
+
+ag_max_step : 3
+
+ag_basic_needs : 0.1
+ag_move_needs : 0.3
+
+invent_fract : 0.5
+
+ag_random_death : 0.01
+ag_sight : 15
+ag_max_invent : 1
