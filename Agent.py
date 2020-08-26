@@ -4,6 +4,8 @@ from scipy.interpolate import barycentric_interpolate
 import matplotlib.pyplot as plt
 import math
 
+import yaml
+
 import tensorflow as tf
 
 
@@ -29,6 +31,8 @@ energy_cons_rate = 0.3
 
 phys_inputs = 3
 phys_outputs = 5
+
+agent_sight = 10
 
 class Eater:
 	def __init__(self, sim, position):
@@ -56,7 +60,7 @@ class Sap:
 
 
 		#self.sight = int(math.sqrt(sim.dimension))
-		self.sight = sim.dimension / 4
+		self.sight = agent_sight
 
 		# Social Attributes
 		self.acquaint = {}
@@ -132,7 +136,7 @@ class Sap:
 
 		action = self.phys_act
 
-		print('Decision: {}'.format(action))
+		#print('Decision: {}'.format(action))
 
 		if np.argmax(action) == 3:
 			self.eat()

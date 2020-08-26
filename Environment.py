@@ -1,7 +1,7 @@
 #For drawing Bezier Curve
 
 import os
-os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = "true"
+import yaml
 
 import numpy as np
 import random
@@ -49,20 +49,25 @@ def diffuse(environment, arr, pos, radius = 1):
 
 
 class Environment:
-	def __init__(self,dimension):
+	def __init__(self, parameter_file):
 
-		self.dimension_x, self.dimension_y = dimension
+		f = open(parameter_file)
+		param = yaml.load(f, Loader = yaml.FullLoader)
+		
+		self.dimension_x, self.dimension_y = param['dimension_x'], param['dimension_y']
+
+		print('Creating Environment with size ({},{})'.format(self.dimension_x, self.dimension_y))
 
 		# Resource Generation Map
-		self.resource_gen_rate = Perlin_Generator(dimension = (self.dimension_x, self.dimension_y), seed = 1).get_map()
-		self.resource_gen_rate = normalize(self.resource_gen_rate,0,env_max_resource_gen_rate)
+		self.resource_gen_rate = Perlin_Generator(dimension = (self.dimension_y, self.dimension_x), seed = 1).get_map()
+		self.resource_gen_rate = normalize(self.resource_gen_rate, 0, env_max_resource_gen_rate)
 		
 		# Danger Map
-		self.danger = Perlin_Generator(dimension = (self.dimension_x, self.dimension_y), seed = 2).get_map()
+		self.danger = Perlin_Generator(dimension = (self.dimension_y, self.dimension_x), seed = 2).get_map()
 		self.danger = normalize(self.danger,0,env_max_danger)
 
 		# Resource Map
-		self.resource = Perlin_Generator(dimension = (self.dimension_x, self.dimension_y), seed = 3).get_map()
+		self.resource = Perlin_Generator(dimension = (self.dimension_y, self.dimension_x), seed = 3).get_map()
 		self.resource = normalize(self.resource,0,env_max_resource)
 		
 		# Dynamic parameters of Agents
@@ -123,7 +128,6 @@ class Environment:
 		self.resource = diffuse(self, self.resource, (pos_x, pos_y), radius = 2)
 
 		# Agent's inventory gets updated
-		print('Consumed: ', consumed)
 		return consumed
 	
 
@@ -176,25 +180,29 @@ class Environment:
 			plt.plot([dst_x, src_x], [dst_y, src_y], color = (r,g,b, alph), linestyle =':', linewidth=3)
 
 
-	def draw_environment(self, sim, image_file = None):
+	def draw_environment(self, sim, image_file = None, tick = None):
 		
 		plt.clf()
 
-		plt.figure()
+		plt.figure(figsize = (15,15), dpi=25)
 
 		plt.rcParams["figure.figsize"] = [20,15]
-		#plt.axis('off')
+		plt.axis('off')
 
 		plt.title('Environment', fontsize = 22)
-
-		res = plt.imshow(self.resource.T, cmap = 'Greens', alpha = 1)
-		dng = plt.imshow(self.danger.T, cmap = 'Reds', alpha = 0.4)
+		
 
 		plt.gca().invert_yaxis()
 
 		plt.rc('xtick', labelsize=22)
 		plt.rc('ytick', labelsize=22)
-		
+
+		res = plt.imshow(self.resource.T, cmap = 'Greens', alpha = 1)
+		dng = plt.imshow(self.danger.T, cmap = 'Reds', alpha = 0.4)
+
+		if tick is not None:
+			plt.text(3 ,-5, 'Tick: {}'.format(tick), fontsize=18)
+
 		plt.colorbar(res).set_label('Resource')
 		plt.colorbar(dng).set_label('Danger')
 		
@@ -210,7 +218,7 @@ class Environment:
 					pass
 
 		if image_file:
-			plt.savefig(image_file, figsize = (10,10), dpi=30)
+			plt.savefig(image_file)
 
 		plt.close()
 	

@@ -54,7 +54,7 @@ class Perlin_Generator:
 
         x,y = np.meshgrid(lin_x,lin_y) # FIX3: I thought I had to invert x and y here but it was a mistake
 
-        return perlin(x,y,seed = self.seed)
+        return perlin(x,y, seed = self.seed)
 
 if __name__ == '__main__':
     map = Perlin_Generator(dimension = (150,100), seed = 1).get_map().repeat(4, axis=0).repeat(4, axis=1)

@@ -1,12 +1,15 @@
 
 import tensorflow as tf
+import yaml
 
 import sys
+import time
+import os
+import glob
 
-sys.stdout.flush()
 
 import numpy as np
-#from Environment import Environment
+
 from Agent import Sap, Sap_Interactions
 
 from Environment import Environment
@@ -26,16 +29,18 @@ import gif
 
 import math
 
-
-image_file = 'Env_Snapshots/Tick'
+parameter_file = 'Parameters.yaml'
+snap_dir = 'Snapshots'
+snap_file = snap_dir + '/Tick'
+gif_file = 'Evolution.gif'
 
 class Simulation:
-	def __init__(self, dimension = 200 ,no_agents = 20 ,time_units = 40):
+	def __init__(self, no_agents ,time_units, parameter_file):
 
 		#gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction = 1 / (no_agents + 1))
 		#sess = tf.Session(config = tf.ConfigProto(gpu_options = gpu_options))
 
-		self.dimension = dimension
+		self.parameter_file = parameter_file
 		self.no_agents = no_agents
 		self.time_units = time_units
 
@@ -72,11 +77,11 @@ class Simulation:
 
 	def init_sim(self):
 
-		self.env = Environment((self.dimension,self.dimension))
+		self.env = Environment(self.parameter_file)
 
 		for i in range(self.no_agents):
-			x = int(np.random.uniform(2 * self.dimension / 10, 9 * self.dimension / 10))
-			y = int(np.random.uniform(2 * self.dimension / 10, 9 * self.dimension / 10))
+			x = int(np.random.uniform(2 * self.env.dimension_x / 10, 9 * self.env.dimension_x / 10))
+			y = int(np.random.uniform(2 * self.env.dimension_y / 10, 9 * self.env.dimension_y / 10))
 			self.add_agent( Sap(self, (x,y) ) )
 
 		for agent_id, agent in self.all_agents.items():
@@ -87,14 +92,14 @@ class Simulation:
 			agent.acquaint[oth_agent_id] = np.random.uniform(-1,1)
 
 
-	def run_sim_unit(self, t, save_path, visualize):
+	def run_sim_unit(self, t, visualize):
 
-		print('Simtime: {}'.format(t), flush = True)
+		print('Sim Time Unit {}'.format(t + 1), flush = True)
 		if visualize:
-			file = save_path + str(t) + '.png'
-			self.env.draw_environment(self, file)
+			file = snap_file + str(t + 1) + '.png'
+			self.env.draw_environment(self, file, tick = t + 1)
 		else:
-			self.env.draw_environment(self)
+			self.env.draw_environment(self, tick = t + 1)
 
 		for agent_id, agent in self.all_agents.items():
 			alive = agent.life_tick()
@@ -105,46 +110,87 @@ class Simulation:
 		self.env.regen_resource()
 
 
-	def animate_evolution(self, save_path):
+	def animate_evolution(self):
 
-		plt.clf()
+		try:
+			no_snaps = len([name for name in os.listdir(snap_dir) if os.path.isfile(os.path.join(snap_dir, name))])
 
-		fig = plt.figure()
+			plt.clf()
 
-		images = []
+			fig = plt.figure()
 
-		print('Recomposing animation')
-		for t in range(self.time_units):
-			file = image_file + str(t) + '.png'
-			im = plt.imread(file)
-			images.append([plt.imshow(im)])
+			images = []
 
-		ani = animation.ArtistAnimation(fig, images, interval=100, repeat_delay=0)
-		plt.axis('off')
+			print('Recomposing animation ({} snapshots found)'.format(no_snaps), flush = True)
+			
+			for t in range(no_snaps):
+				file = snap_file + str(t + 1) + '.png'
+				im = plt.imread(file)
+				images.append([plt.imshow(im)])
 
-		writergif = animation.PillowWriter(fps=5) 
-		ani.save('Evolution.gif', writer=writergif)
-		
-		#plt.show()
+			ani = animation.ArtistAnimation(fig, images, interval=100, repeat_delay=0)
+			plt.axis('off')
 
+			writergif = animation.PillowWriter(fps=5) 
+			ani.save(gif_file, writer = writergif)
+			
+			#plt.show()
+		except:
+			pass
 
-	def run_all(self, save_path, visualize = False):
+	def run_all(self, visualize = False):
 
 		self.init_sim()
 
-		for t in range(self.time_units):
-			self.run_sim_unit(t, save_path, visualize = visualize)
+		start_time = time.time()
+
+		for t in range(time_units):
+			self.run_sim_unit(t, visualize = visualize)
 			#self.delete_agents()
+
+		print('Run time: %s seconds' % (time.time() - start_time), flush = True)
+
 		if visualize:
-			self.animate_evolution(save_path)
+			self.animate_evolution()
 
 
 if __name__ == '__main__':
 
-	import time
-	start_time = time.time()
 
-	sim = Simulation(time_units = 25, no_agents = 3)
-	sim.run_all(image_file, visualize = True)
+	f = open(parameter_file)
+	param = yaml.load(f, Loader = yaml.FullLoader)
+		
+	time_units = param['time_units']
+	no_agents = param['no_agents']
 
-	print('Run time: %s seconds' % (time.time() - start_time))
+
+	try:
+		time_units = sys.argv[1]
+		no_agents = sys.argv[2]
+	except:
+		pass
+
+
+	sim = Simulation(time_units, no_agents, parameter_file)
+
+	if not os.path.isfile(gif_file):
+		sim.animate_evolution()
+
+	else:
+		print('Running simmulation for {} Ticks with {} Agents.'.format(time_units, no_agents))
+		
+		try:
+
+			files = glob.glob(snap_dir + '/*')
+			for f in files:
+				os.remove(f)
+		except:
+			pass
+
+		if not os.path.isdir(snap_dir):
+			os.mkdir(snap_dir)
+
+		sim.run_all(visualize = True)
+
+
+

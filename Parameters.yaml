@@ -1,0 +1,11 @@
+# Simulation Parameters
+
+no_agents : 3
+time_units : 10
+
+# Environment Parameters
+
+dimension_x : 350
+dimension_y : 250
+
+# Agent Parameters
