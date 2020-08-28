@@ -37,6 +37,8 @@ env_dimension = param['dimension_x'], param['dimension_y']
 font_size = 40
 fig_size = font_size
 
+ag_shapes = {1: 'o', 2: 's', 3 : 'P'}
+
 def diffuse(environment, arr, pos, radius = 1):
 	#Blur around a specific point of image
 	pos_x, pos_y = pos
@@ -47,6 +49,7 @@ def diffuse(environment, arr, pos, radius = 1):
 
 		diffuse_area = arr[pos_x - radius : pos_x + radius + 1, pos_y - radius : pos_y + radius + 1]
 		diffuse_area = cv2.GaussianBlur(diffuse_area,(radius * 2 + 1,radius * 2 + 1), 0)
+
 		arr[pos_x - radius : pos_x + radius + 1, pos_y - radius : pos_y + radius + 1] = diffuse_area
 
 	return arr
@@ -65,18 +68,17 @@ class Environment:
 
 		# Danger Map
 		self.danger = Perlin_Generator(dimension = (self.dimension_x, self.dimension_y), seed = 2).get_map().T
-		self.danger = normalize(self.danger,0,env_max_danger)
+		self.danger = normalize(self.danger,0, env_max_danger)
 
 		# Resource Map
 		self.resource = Perlin_Generator(dimension = (self.dimension_x, self.dimension_y), seed = 3).get_map().T
-		self.resource = normalize(self.resource,0,env_max_resource)
+		self.resource = normalize(self.resource,0, env_max_resource)
 
 		
 		# Dynamic parameters of Agents
 		self.max_social = 1
 		self.max_inventory = 1
 		self.max_reputation = 1
-		self.max_damger = env_max_danger
 		self.max_maslow = 1
 		self.max_acq = 1
 
@@ -109,15 +111,16 @@ class Environment:
 	
 	def regen_resource(self):
 
-		instant_rate = self.max_resource / self.resource.sum()
+		instant_rate = env_max_resource / np.mean(self.resource.sum())
 		self.resource += self.resource_gen_rate * instant_rate
 		
 		# Smoothening surface
 		self.resource = cv2.GaussianBlur(self.resource,(3,3),0)
+		self.resource = normalize(self.resource,0,1)
 	
 
-	def consume_resource(self, position):
-		pos_x, pos_y = position
+	def consume_resource(self, agent):
+		pos_x, pos_y = agent.position
 
 		# Argueable formula
 		# Rule by which Agents extract reosurce from environment
@@ -127,7 +130,7 @@ class Environment:
 			consumed = self.resource[pos_x, pos_y]
 
 		self.resource[pos_x,pos_y] -= consumed
-		self.resource = diffuse(self, self.resource, (pos_x, pos_y), radius = 2)
+		self.resource = diffuse(self, self.resource, (pos_x, pos_y), radius = 1)
 
 		# Agent's inventory gets updated
 		return consumed
@@ -140,17 +143,19 @@ class Environment:
 
 			# Argueable formula
 			self.danger[pos_x, pos_y] -= danger_reduce * self.danger[pos_x, pos_y]
-			self.danger = diffuse(self.danger, agent.position, radius = 3)
+			self.danger = diffuse(self, self.danger, agent.position, radius = 15)
+
+		self.danger = normalize(self.danger,0,1)
+		self.danger = cv2.GaussianBlur(self.danger, (3,3), 0)
 
 
 	def draw_agent(self, agent):
 
 		pos_x, pos_y = agent.position
-		plt.plot(pos_x,pos_y, marker = r'$\bigodot$', markersize = font_size, color = agent.color) 
+		plt.plot(pos_x,pos_y, marker = ag_shapes[agent.shape], markersize = 0.8*font_size, color = agent.color) 
 		
-		#agent_info = 'En: ' + str(int(agent.energy*10)) + '\n' + 'Inv: ' + str(int(agent.inventory * 10))
-		agent_info = str(int(self.resource[pos_x,pos_y] * 100))
-		plt.text(pos_x + 3 ,pos_y + 3, agent_info, fontsize = 0.85 * font_size )
+		agent_info = 'En: ' + str(int(agent.energy*10)) + '\n' + 'Inv: ' + str(int(agent.inventory * 10))
+		plt.text(pos_x + 3 ,pos_y + 4, agent_info, fontsize = 0.75 * font_size )
 
 
 	def draw_relationship(self, agent_src, agent_dst, score):
@@ -179,15 +184,15 @@ class Environment:
 			src_x, src_y = agent_src.position 
 			dst_x, dst_y = agent_dst.position
 
-			plt.plot([dst_x, src_x], [dst_y, src_y], color = (r,g,b, alph), linestyle =':', linewidth=3)
+			plt.plot([dst_x, src_x], [dst_y, src_y], color = (r,g,b, alph), linestyle =':', linewidth=4)
 
 
-	def draw_environment(self, sim, image_file = None, tick = None):
+	def draw_environment(self, sim, interacts, image_file = None, tick = None):
 		
+		# --- Plot parameters --- 
 		plt.clf()
 		plt.figure(figsize = (fig_size, fig_size), dpi=25)
 
-		#plt.rcParams["figure.figsize"] = [40,40]
 		#plt.axis('off')
 
 		plt.title('Environment', fontsize = font_size)
@@ -198,8 +203,9 @@ class Environment:
 		plt.rc('xtick', labelsize = font_size)
 		plt.rc('ytick', labelsize = font_size)
 
+		# --- Show resource and danger --- 
 		res = plt.imshow(self.resource.T, cmap = 'Greens', alpha = 1)
-		dng = plt.imshow(self.danger.T, cmap = 'Reds', alpha = 0)
+		dng = plt.imshow(self.danger.T, cmap = 'Reds', alpha = 0.4)
 
 		if tick is not None:
 			plt.text(3 ,-5, 'Tick: {}'.format(tick), fontsize = font_size)
@@ -207,6 +213,7 @@ class Environment:
 		plt.colorbar(res).set_label('Resource')
 		plt.colorbar(dng).set_label('Danger')
 		
+		# --- Show agents --- 
 		for agent_id, agent in sim.all_agents.items():
 		
 			self.draw_agent(agent)
@@ -217,6 +224,14 @@ class Environment:
 					self.draw_relationship(agent, other_agent, score)
 				except:
 					pass
+
+		# --- Show current interactions --- 
+		if len(interacts) > 1:
+			for agent_id, oth_agent_id in interacts:
+				x1, y1 = sim.all_agents[agent_id].position
+				x2, y2 = sim.all_agents[oth_agent_id].position
+
+				plt.plot([x1, x2], [y1, y2], color = 'cyan', linestyle =':', linewidth = 5)
 
 		if image_file:
 			plt.savefig(image_file)

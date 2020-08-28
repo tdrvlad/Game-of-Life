@@ -50,7 +50,7 @@ class Simulation:
 		self.all_agents = {}
 		self.agents_to_remove = []
 
-		interact = Sap_Interactions(self)
+		self.sim_interactions = Sap_Interactions(self).simulate_interactions
 
 
 	def add_agent(self, agent):
@@ -100,13 +100,12 @@ class Simulation:
 
 	def run_sim_unit(self, t, visualize):
 
-		print('Sim Time Unit {}'.format(t + 1), flush = True)
-		if visualize:
-			file = snap_file + str(t + 1) + '.png'
-			self.env.draw_environment(self, file, tick = t + 1)
-		else:
-			self.env.draw_environment(self, tick = t + 1)
+		print('Sim Time Unit {}'.format(t), flush = True)
 
+		self.env.update_danger(self)
+		self.env.regen_resource()
+
+		
 		for agent_id, agent in self.all_agents.items():
 			alive = agent.life_tick()
 				
@@ -114,8 +113,10 @@ class Simulation:
 				self.agents_to_remove.append(agent_id)
 
 		self.delete_agents()
-		self.env.regen_resource()
+		interacts = self.sim_interactions()
 
+		self.env.draw_environment(self, tick = t, interacts = interacts, image_file = snap_file + str(t) + '.png')
+		
 
 	def animate_evolution(self):
 
@@ -152,8 +153,11 @@ class Simulation:
 		start_time = time.time()
 
 		for t in range(self.time_units):
-			self.run_sim_unit(t, visualize = visualize)
-			#self.delete_agents()
+			self.run_sim_unit(t + 1, visualize = visualize)
+			
+			if len(list(self.all_agents.keys())) == 0:
+				print('All Saps died')
+				break
 
 		print('Run time: %s seconds' % (time.time() - start_time), flush = True)
 

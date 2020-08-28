@@ -12,9 +12,20 @@ from tensorflow.keras.optimizers import Adam
 from collections import deque
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="-1"    
+import yaml
+
+os.environ["CUDA_VISIBLE_DEVICES"]="-1"    #This makes it run on CPU (no error)
+
+#tf.config.run_functions_eagerly(True)
+
+parameter_file = 'Parameters.yaml'
+
+param = yaml.load(open(parameter_file), Loader = yaml.FullLoader)
+training_batch = param['training_batch']
+
 
 class Brain:
+
 	def __init__(self, no_inputs, no_outputs, architecture):
 		
 		# Architecture (n,m,n) means a neural network of 3 fully connected layers with n , m and n neurons respectevley.
@@ -42,6 +53,7 @@ class Brain:
 		model = Sequential()
 		
 		model.add(Input(self.no_inputs, name = 'Input'))
+		
 		for i in range(self.no_layers):
 			model.add(Dense(self.neurons_per_layer[i], activation = 'sigmoid', name = 'Hidden' + format(i)))
 		model.add(Dense(self.no_outputs, activation = 'sigmoid', name = 'Output'))
@@ -55,11 +67,10 @@ class Brain:
 		return model
 
 	def replay(self):
-		batch_size = 10
-		if len(self.memory) < batch_size: 
+		if len(self.memory) < training_batch: 
 			return
 
-		samples = random.sample(self.memory, batch_size)
+		samples = random.sample(self.memory, training_batch)
 
 		for sample in samples:
 			
@@ -99,3 +110,11 @@ class Brain:
 	def save_model(self, file):
 		self.model.save(file)
 
+	def summary(self):
+		self.model.summary()
+
+
+if __name__ == '__main__':
+
+	brain = Brain(2,2,(3,3))
+	brain.summary()

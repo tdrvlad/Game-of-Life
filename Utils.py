@@ -67,5 +67,4 @@ class Utils:
 
 		return d_x, d_y
 	
-	def sign():
-		return fools.partial(math.copysign, 1)
+
