@@ -1,5 +1,7 @@
 import math
 import numpy as np
+import os
+
 
 class Utils:
 	def __init__(self):
@@ -65,6 +67,69 @@ class Utils:
 		except:
 			pass
 
+		if not d_x:
+			d_x = 0
+		if not d_y:
+			d_y = 0
+
 		return d_x, d_y
 	
+
+class Logger:
+	def __init__(self, log_file):
+		self.log_file = log_file
+
+		if not os.path.isfile(self.log_file):
+			with open(self.log_file, 'w') as file:
+				file.write('Simmulation Log: \n')
+
+	def log(self, text):
+		with open(self.log_file, 'a') as file:
+			file.write(text + '\n')
+
+	def reset(self):
+		with open(self.log_file, 'w') as file:
+				file.write('Simmulation Log: \n')
+
+class Genetics:
+	def __init__(self):
+		pass
+
+	def get_color(self, parent1, parent2):
+
+		if parent1 != None and parent2 != None:
+			return [(c1 + c2 )/ 2 for c1, c2 in zip(parent1.color, parent2.color)]
+
+		else:
+			return list(np.random.uniform(size = 3))
+
+	def get_dna(self, parent1, parent2, no_inputs, no_outputs):
+		dna = []
+		if parent1 != None and parent2 != None:
+
+			for i in range(min(len(parent1.dna), len(parent2.dna))):
+				mut = np.random.randint(-1,2)
+				if np.random.uniform() > 0.5:
+					if int(parent1.dna[i] + mut) < 2:
+						dna.append(2)
+					else:
+						dna.append(int(parent1.dna[i] + mut))
+				else:
+					if int(parent2.dna[i] + mut) < 2:
+						dna.append(2)
+					else:
+						dna.append(int(parent2.dna[i] + mut))
+
+			if max(len(parent1.dna), len(parent2.dna)) != min(len(parent1.dna), len(parent2.dna)):
+				dna.append(np.random.randint(0.5 * no_outputs, 1.5 * no_outputs + 1))
+
+			if np.random.uniform() > 0.95:
+				dna.append(np.random.randint(0.5 * no_outputs, 1.5 * no_outputs + 1))
+
+		else:
+			dna.append(np.random.randint(0.5 * no_inputs, 1.5 * no_inputs + 1))
+			dna.append(np.random.randint(0.5 * no_outputs, 1.5 * no_outputs + 1))
+
+		return dna
+
 

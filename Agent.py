@@ -14,7 +14,7 @@ import yaml
 from numpngw import write_apng
 import gif
 
-from Utils import Utils
+from Utils import Utils, Logger, Genetics
 from Agent_Brain import Brain
 
 # ----------- Tools ----------- 
@@ -27,7 +27,10 @@ roulette_selection = utils.roulette_selection
 gradient = utils.gradient
 
 parameter_file = 'Parameters.yaml'
+log_file = 'Sim_Log.txt'
+l = Logger(log_file)
 
+genetic = Genetics()
 
 # ----------- Agent Parameters ----------- 
 
@@ -44,10 +47,19 @@ ag_max_sight = param['ag_sight']
 ag_max_step = param['ag_max_step']
 ag_max_invent = param['ag_max_invent']
 ag_max_interact_dist = param['ag_max_interact_dist']
+ag_mating_score = param['ag_mating_score']
 
-phys_inputs = 3
-phys_outputs = 5
+brain_inputs = 4
+brain_outputs = 5
 
+def agent_info(agent):
+	##
+	info = 'Sim: ' + str(agent.sim.time) \
+		+ ' | Invent:' + str(np.round(agent.inventory,1)) \
+		+ ' | Energy:' + str(np.round(agent.energy,1)) + ' | Soc:' +  str(np.round(agent.social,1)) \
+		+ ' | Act:' +  str(np.round(agent.actualization,1)) \
+		+ ' | Maslw:' + str(np.round(agent.actualization,1))
+	return info	
 
 # ----------- Agent Class ----------- 
 
@@ -55,10 +67,14 @@ class Sap:
 	
 	# ------- Elementary ------- 
 
-	def __init__(self, sim, position,color = None):
+	def __init__(self, sim, position, parent1 = None, parent2 = None):
 		
 		self.sim = sim
 		self.ident = None
+
+		# Genetics
+		self.color = genetic.get_color(parent1, parent2)
+		self.dna = genetic.get_dna(parent1, parent2, brain_inputs, brain_outputs) # Architecture of the Neural Network
 
 		# Physiological Attributes
 		self.age = 0
@@ -78,52 +94,20 @@ class Sap:
 
 		# Social Attributes
 		self.acquaint = {}
-		self.color = list(np.random.uniform(size = 3)) if color is None else color
-		
+		self.offsprings = []
+
+				
 		self.memory = []
 		self.max_memory = 3
 		
+		self.brain = Brain(no_inputs = brain_inputs, no_outputs = brain_outputs, architecture = self.dna)
 		
-		# Decisional brain
-		'''
-			1. Physiological decisions:
+		self.last_state = None
+		self.new_state = None
+		self.act = None
 
-			states = [current_resource, inventory, energy]
-			actions = [resource_priority, social_priority, explore_priority, consume_resource, gather_resource]
-
-			- move_x, move_y are in range (-1,1) to compose any 360 movement
-			- consume / gather resources in range (-1,1) and represents wether agent consumes 
-				resource from the inventory to regenerate energy or gathers resource from the 
-				environment into inventory
-
-			Trained to maximize Maslow score and Energy
 		
-
-			2. Social decisions: 
-
-			states = [energy, inventory, other-energy, other-inventory, other-maslow]
-			actions = [fight / collaborate, mate]
-
-			- fight / collaborate is in range (-1,1) and represents wether agents want to be adverse to the other or not
-			- mate is a boolean and represents the reported by the agent compatibility of the two
-
-			Trained to maximize Maslow score and Social
-		'''
-		#with tf.variable_creator_scope(self):
-		self.phys_brain = Brain(no_inputs = phys_inputs, no_outputs = phys_outputs, architecture = (3,5))
-		#self.social_brain = Brain(no_inputs = 5, no_outputs = 2, architecture = (6,10))
-
-		self.phys_last_state = None
-		self.phys_new_state = None
-		self.phys_act = None
-
-		'''
-		self.soc_lasta_state = None
-		self.soc_new_state = None
-		self.soc_act = None
-		'''
-
-
+		
 	def life_tick(self):
 		# Unit Time Run
 		
@@ -141,7 +125,7 @@ class Sap:
 		self.propagate_acquaint()
 		self.refresh_memory()
 
-		self.phys_decide()
+		self.decide()
 
 		# print('Ag', self.ident, ' acquaintances: ', self.acquaint.items())
 
@@ -155,9 +139,22 @@ class Sap:
 		x, y = self.position
 		self.energy -= ag_basic_needs * self.sim.env.danger[x,y]
 
-		# Arbitrary death due to environment danger
-		if self.energy < 0.1 and self.inventory > 0.1:
+		if self.energy < 0.1:
+			self.energy = 0.1
+		# Eating or gathering resources
+		if 1 / self.energy > 1 / self.inventory:
 			self.eat()
+		else:
+			self.gather_res()
+
+		# Update of inventory
+		if self.inventory < 0:
+			self.inventory = 0
+
+		if self.inventory > self.max_invent:
+			self.inventory = self.max_invent
+
+		self.log.log(agent_info(self))
 
 		if self.energy < 0.1 or np.random.uniform() < ag_random_death * self.sim.env.danger[x,y]:
 			return 0 	# Dead
@@ -167,52 +164,82 @@ class Sap:
 
 	# ------- Physiological decisions and actions ------- 
 
-	def phys_decide(self):
-		
-		
+	def decide(self, other_agent = None):
+
+		# Brain
+		'''
+			inputs = [current_resource, inventory, energy, acquintance_score]
+			actions = [resource_priority, social_priority, explore_priority, fight, collaborate]
+
+			Agent decides wether to move or to interact with surrounding agents.
+			If it chooses to move, the x_priority modulates a corresponding direction tensor (oriented by the parameter gradient)
+			If it chooses to interact, policy is established by the maximum of the 3 - fight/collaborate
+			If one agent chooses to interact and the other to move, the interaction is neutral
+			If one agent chooses to fight, then interaction is fhigt and a winner is determined 
+			If both choose to collaborate, then interaction is collaborate. If both rate collaboartion with high scores, they mate
+
+			Brain is a Neural-Network trained to maximize Maslow Score
+			Architecture of the Neural-Network is determined genetically
+
+		'''
+
 		#Update current state
 		pos_x, pos_y = self.position # Agent's position
 		curr_resource = self.sim.env.resource[pos_x, pos_y] 
 
-		self.phys_new_state = np.array([curr_resource, self.inventory, self.energy]).reshape(1, phys_inputs)
+		if other_agent is None:
+			acq_score = 0.5
+		else:
+			if other_agent.ident not in self.acquaint.keys():
+				acq_score = 0.5
+			else:
+				acq_score = (self.acquaint[other_agent.ident] + 1) / 2 # normalized with moddle in 0.5
 		
-		if isinstance(self.phys_last_state, np.ndarray):
+		self.new_state = np.array([curr_resource, self.inventory, self.energy, acq_score]).reshape(1, brain_inputs)
+		
+
+		if isinstance(self.last_state, np.ndarray):
 			
-			self.phys_brain.remember(
-				state = self.phys_last_state, 
-				action = self.phys_act, 
-				reward = self.energy * self.inventory,
-				new_state = self.phys_new_state
+			self.brain.remember(
+				state = self.last_state, 
+				action = self.act, 
+				reward = self.maslow,
+				new_state = self.new_state
 				)
 
-			self.phys_brain.replay()
-			self.phys_brain.target_train()
+			self.brain.replay(epochs = 5)
+			self.brain.train()
 
-		self.phys_last_state = self.phys_new_state
+		self.last_state = self.new_state
 
-		self.phys_act = self.phys_brain.decide(self.phys_new_state)
+		self.act = self.brain.decide(self.new_state)
 
-		action = self.phys_act
+		info = '[Res: ' + str(np.round(self.act[0],1)) + ' Soc: ' + str(np.round(self.act[1],1)) + ' Expl: ' + str(np.round(self.act[2],1)) + ' Fight: ' + str(np.round(self.act[3],1)) + ' Collab: ' + str(np.round(self.act[4],1)) + ']'
+		self.log.log('Decision: ' + info ) 
 
-		#print('Decision: {}'.format(action))
+	
+		if other_agent is None: # Non social decision
 
-		if np.argmax(action) == 3:
-			self.eat()
-			self.shape = 2
+			self.direction(
+				resource_priority = self.act[0],
+				social_priority = self.act[1],
+				explore_priority = self.act[2] )
 
-		elif np.argmax(action) == 4:
-			self.gather_res()
-			self.shape = 3
+			return None, None
 		
 		else:
-			self.shape = 1
-			self.decide_direction(
-				resource_priority = action[0],
-				social_priority = action[1],
-				explore_priority = action[2] )
-		
+			# Decide if social interaction is priority
+			if (self.act[0] + self.act[1] + self.act[2]) / 3 > (self.act[3] + self.act[4]) / 2:
+				self.direction(
+					resource_priority = self.act[0],
+					social_priority = self.act[1],
+					explore_priority = self.act[2] )
+				return None, None
+			else:
+				return self.act[3], self.act[4]
+
 	
-	def decide_direction(self, resource_priority, social_priority, explore_priority):
+	def direction(self, resource_priority, social_priority, explore_priority):
 
 		x, y = self.position
 
@@ -245,14 +272,13 @@ class Sap:
 				ag_x, ag_y = agent.position
 				# Only applies to agents known by self
 
-				print('Ag ({},{}), score: {}'. format(ag_x, ag_y, score))
 				vecinity_x += 1 / (self_x - ag_x + 0.1) * score
 				vecinity_y += 1 / (self_y - ag_y + 0.1) * score
 
 			except:
 				pass
 
-		if not np.isnan(vecinity_x) and not np.isnan(vecinity_y):
+		if vecinity_x and vecinity_y:
 			
 			maxim = max(abs(vecinity_x), abs(vecinity_y))
 			
@@ -264,44 +290,50 @@ class Sap:
 			vecinity_x = 0
 			vecinity_y = 0
 
-		print('Vecinity: ({},{})'.format(vecinity_x, vecinity_y))
 		return vecinity_x, vecinity_y
 
 
 	def move(self, d_x, d_y):
 
-		d_x = int(np.round(d_x))
-		d_y = int(np.round(d_y))
+		try:
+			d_x *= self.energy / ag_move_needs
+			d_y *= self.energy / ag_move_needs
 
-		#print('dx: ', d_x, ', dy: ', d_y)
+			d_x = int(np.round(d_x))
+			d_y = int(np.round(d_y))
+
+			#print('dx: ', d_x, ', dy: ', d_y)
+			
+			if abs(d_x) > ag_max_step:
+				d_x = ag_max_step * np.sign(d_x)
+
+			if abs(d_y) > ag_max_step:
+				d_y = ag_max_step * np.sign(d_y)
+
+			pos_x, pos_y = self.position
+			
+			# Make sure agent stays in environment boundries
+			if pos_x + d_x >= self.sim.env.dimension_x:
+				pos_x = self.sim.env.dimension_x - 1 
+			elif pos_x + d_x < 0:
+				pos_x = 0
+			else:
+				pos_x += d_x
+
+			if pos_y + d_y >= self.sim.env.dimension_y:
+				pos_y = self.sim.env.dimension_y - 1
+			elif pos_y + d_y < 0:
+				pos_y = 0
+			else:
+				pos_y += d_y
+
+
+
+			self.position = (pos_x, pos_y)
+			self.energy -= math.sqrt(d_x ** 2 + d_y ** 2) * ag_move_needs
 		
-		if abs(d_x) > ag_max_step:
-			d_x = ag_max_step * np.sign(d_x)
-
-		if abs(d_y) > ag_max_step:
-			d_y = ag_max_step * np.sign(d_y)
-
-		pos_x, pos_y = self.position
-		
-		# Make sure agent stays in environment boundries
-		if pos_x + d_x >= self.sim.env.dimension_x:
-			pos_x = self.sim.env.dimension_x - 1 
-		elif pos_x + d_x < 0:
-			pos_x = 0
-		else:
-			pos_x += d_x
-
-		if pos_y + d_y >= self.sim.env.dimension_y:
-			pos_y = self.sim.env.dimension_y - 1
-		elif pos_y + d_y < 0:
-			pos_y = 0
-		else:
-			pos_y += d_y
-
-
-
-		self.position = (pos_x, pos_y)
-		self.energy -= math.sqrt(d_x ** 2 + d_y ** 2) * ag_move_needs
+		except:
+			pass
 		
 
 	def eat(self):
@@ -319,38 +351,11 @@ class Sap:
 		# Gathering resource is more efficient while near collaborating agents
 		self.inventory += self.sim.env.consume_resource(self) * res_to_invent
 
-		# Value validation
-		if self.inventory < 0:
-			self.inventory = 0
-
-		if self.inventory > self.max_invent:
-			self.inventory = self.max_invent
-
+		
 
 	# ------- Social decisions and actions ------- 
 
-	def social_policy(self, other_agent):
-
-		#To be updated to an intelligent decision
-
-		try:
-			collaborate = self.acquaint[other_agent.ident] * np.random.uniform(-0.1,0.3)
-		except:
-			collaborate = np.random.uniform(-0.5,0.5)
-
-		try:
-			fight = - self.acquaint[other_agent.ident] * np.random.uniform(-0.1,0.3)
-		except:
-			fight = np.random.uniform(-0.5,0.5)
-
-		try:
-			mate = self.acquaint[other_agent.ident] * np.random.uniform(-0.1,0.1) * np.random.randint(0,2)
-		except:
-			mate = np.random.uniform(-0.5,0.5)
-
-		return collaborate, fight, mate
-
-
+	
 	def add_to_memory(self, agent_id):
 		# Function that creates memory instance of internal state at the time of interaction with a certain agent
 		# It is used to judge wether interaction with agent has proven useful afterwards
@@ -368,8 +373,8 @@ class Sap:
 
 
 	def train(self,agent, iterations = 10):
-		#To be implemented
-		pass
+
+		self.brain.mirror_training(agent.brain, batches = 10, epochs = 5)
 
 
 	# ------- Cyclic parameter updates ------- 
@@ -440,8 +445,20 @@ class Sap:
 		# Arguable formula
 		self.actualization = (self.actualization + self.update_reputation()) / 2
 
-		# Has to include the (eventual) offspring maslow scores
+		for ch_id in self.offsprings:
 
+			if ch_id not in self.sim.all_agents.keys():
+				# Child is dead
+				self.actualization = 0
+				self.offsrpings.remove(ch_id)
+			else:
+				# Parent wants to maximize offspring Maslow Score
+				self.actualization = (self.actualization + self.sim.all_agents[ch_id].maslow) / 2
+
+		# Rescale value to 0-1
+		self.actualization = scale_val(self.actualization, self.sim.env.max_actualization, 1)
+
+	
 
 	def update_acquaint(self, base = 2):
 
@@ -493,19 +510,19 @@ class Sap:
 				agent = self.sim.all_agents[agent_id]
 				oth_color = agent.color
 
-				dist = distance(self.position, agent.position)
+				dist = distance(self.position, agent.position) + 0.1
 				if dist:
-					score = score  / math.sqrt(dist)
-				
-					# Argueable formula
-					color_delta = [oth_c - my_c for oth_c, my_c in zip(oth_color,self.color)]
-					
-					# Arguable formula
-					#self.color = [my_c + c_delta * score / oth_c for my_c, c_delta, oth_c in zip(self.color, color_delta, agent.color)]
-					self.color = [my_c + (c_delta * score / (my_c + oth_c + 0.01)) for my_c, c_delta, oth_c in zip(self.color, color_delta, oth_color)]
+					if dist < self.sight:
+						
+						# Argueable formula
+						color_delta = [oth_c - my_c for oth_c, my_c in zip(oth_color, self.color)]
+						
+						# Arguable formula
+						#self.color = [my_c + c_delta * score / oth_c for my_c, c_delta, oth_c in zip(self.color, color_delta, agent.color)]
+						self.color = [my_c + c_delta * score / dist for my_c, c_delta, oth_c in zip(self.color, color_delta, oth_color)]
 
-					self.color = [0 if c < 0 else c for c in self.color]
-					self.color = [1 if c > 1 else c for c in self.color]
+						self.color = [0 if c < 0 else c for c in self.color]
+						self.color = [1 if c > 1 else c for c in self.color]
 			except:
 				pass
 
@@ -555,8 +572,9 @@ class Sap_Interactions:
 				matches[j,:] = np.full(n, np.inf)
 				matches[:,j] = np.full(n, np.inf).T
 		
-				pairs.append((agents_ids[i], agents_ids[j]))
-				self.ag_interact(agents_ids[i], agents_ids[j])
+				if agents_ids[i] != agents_ids[j]:
+					pairs.append((agents_ids[i], agents_ids[j]))
+					self.ag_interact(agents_ids[i], agents_ids[j])
 
 		return pairs
 
@@ -565,22 +583,25 @@ class Sap_Interactions:
 		agent1 = self.sim.all_agents[agent1_id]
 		agent2 = self.sim.all_agents[agent2_id]
 		
-		c_1, f_1, m_1 = agent1.social_policy(agent2)
-		c_2, f_2, m_2 = agent2.social_policy(agent1)
+		f_1, c_1 = agent1.decide(agent2)
+		f_2, c_2 = agent2.decide(agent1)
 
-		if f_1 is max([c_1, f_1, m_1]) or f_2 is max([c_2, f_2, m_2]):
-			self.fight(agent1, f_1, agent2, f_2)
+		if f_1 and c_1 and f_2 and c_2:
+			# Both want to interact
 
-		else:
-
-			if m_1 is max([c_1, f_1, m_1]) and m_2 is max([c_2, f_2, m_2]):
-				self.mate(agent1, agent2)
-
+			if f_1 > c_1 or f_2 > c_2:
+				self.fight(agent1, f_1, agent2, f_2)
 			else:
-				self.collaborate(agent1, agent2)
-
-		agent1.add_to_memory(agent2_id)
-		agent2.add_to_memory(agent1_id)
+				if c_1 * c_2 > ag_mating_score: # Arguable
+					self.mate(agent1, agent2)
+				else:
+					self.collaborate(agent1, agent2)
+			
+			agent1.add_to_memory(agent2_id)
+			agent2.add_to_memory(agent1_id)
+		
+		else:
+			pass
 
 
 	# ------- Possible interactions ------- 
@@ -606,6 +627,13 @@ class Sap_Interactions:
 			fight_result(agent1, agent2)
 		else:
 			fight_result(agent2, agent1)
+
+		info = 'Ag{} ({}) fought Ag{} ({})'.format(agent1.ident, np.round(f1,1), agent2.ident, np.round(f2,1))
+		l.log(info)
+
+		agent1.log.log('Fought with AG{}'.format(agent2.ident))
+		agent2.log.log('Fought with AG{}'.format(agent1.ident))
+	
 	
 
 	def collaborate(self, agent1, agent2):
@@ -620,10 +648,44 @@ class Sap_Interactions:
 			agent2.inventory += agent1.inventory * invent_fract
 			agent1.inventory *= (1 - invent_fract)
 
+		info = 'Ag{} helped Ag{}'.format(agent1.ident, agent2.ident)
+		l.log(info)
 
-	def mate(self, agent1_id, agent2_id):
-		# 
-		pass
+		agent1.log.log('Collaborated with AG{}'.format(agent2.ident))
+		agent2.log.log('Collaborated with AG{}'.format(agent1.ident))
+	
+
+
+	def mate(self, agent1, agent2):
+		
+
+		pos = [int((p1 + p2) / 2) for p1, p2 in zip(agent1.position, agent2.position)]
+
+		newborn = Sap(self.sim, pos, agent1, agent2)
+		self.sim.add_agent(newborn)
+
+		info = 'NEWBORN - Ag{} (Ag{} and Ag{}) with DNA: {}'.format(newborn.ident, agent1.ident, agent2.ident, newborn.dna)
+		l.log(info)
+
+		newborn.acquaint[agent1.ident] = 1
+		newborn.acquaint[agent2.ident] = 1
+
+		agent1.acquaint[newborn.ident] = 1
+		agent2.acquaint[newborn.ident] = 1
+
+		agent1.train(newborn)
+		agent2.train(newborn)
+
+		agent1.log.log('Mated with AG{}'.format(agent2.ident))
+		agent2.log.log('Mated with AG{}'.format(agent1.ident))
+
+		# Add actualization of parents to include maslow score of child
+
+
+
+
+
+		
 
 
 

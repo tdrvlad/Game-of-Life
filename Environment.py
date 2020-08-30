@@ -33,6 +33,8 @@ env_max_resource = param['env_max_resource']
 env_max_resource_gen_rate = param['env_max_resource_gen_rate']
 danger_reduce = param['danger_reduce']
 env_dimension = param['dimension_x'], param['dimension_y']
+ag_max_invent = param['ag_max_invent']
+monolith_motivation = param['monolith_motivation']
 
 font_size = 40
 fig_size = font_size
@@ -81,14 +83,18 @@ class Environment:
 		self.max_reputation = 1
 		self.max_maslow = 1
 		self.max_acq = 1
+		self.max_actualization = 1
 
 		self.max_resource = self.resource.sum()
+
+		self.monolith = Monolith()
 	
 	def update_parameters(self, sim):
 		self.max_social = 0
 		self.max_inventory = 0
 		self.max_reputation = 0
 		self.max_maslow = 0
+		self.max_actualization = 0
 
 		for agent_id, agent in sim.all_agents.items():
 						
@@ -103,6 +109,9 @@ class Environment:
 
 			if agent.maslow > self.max_maslow:
 				self.max_maslow = agent.maslow
+
+			if agent.actualization > self.max_actualization:
+				self.max_actualization = agent.actualization
 
 			for ag_id, score in agent.acquaint.items():
 				if abs(score) > self.max_acq:
@@ -154,8 +163,8 @@ class Environment:
 		pos_x, pos_y = agent.position
 		plt.plot(pos_x,pos_y, marker = ag_shapes[agent.shape], markersize = 0.8*font_size, color = agent.color) 
 		
-		agent_info = 'En: ' + str(int(agent.energy*10)) + '\n' + 'Inv: ' + str(int(agent.inventory * 10))
-		plt.text(pos_x + 3 ,pos_y + 4, agent_info, fontsize = 0.75 * font_size )
+		agent_info = 'En: ' + str(int(agent.energy * 100)) + '% \n' + 'Inv: ' + str(int(agent.inventory / ag_max_invent * 100)) + '%'
+		plt.text(pos_x + 3 ,pos_y + 4, agent_info, fontsize = 0.4 * font_size )
 
 
 	def draw_relationship(self, agent_src, agent_dst, score):
@@ -179,7 +188,7 @@ class Environment:
 
 		# Relationship line transparency (intensity)
 		if abs(score) > 0.3: 
-			alph = abs(score) / 2
+			alph = abs(score) * 0.75
 
 			src_x, src_y = agent_src.position 
 			dst_x, dst_y = agent_dst.position
@@ -193,13 +202,10 @@ class Environment:
 		plt.clf()
 		plt.figure(figsize = (fig_size, fig_size), dpi=25)
 
-		#plt.axis('off')
+		plt.axis('off')
 
 		plt.title('Environment', fontsize = font_size)
 		
-
-		#plt.gca().invert_yaxis()
-
 		plt.rc('xtick', labelsize = font_size)
 		plt.rc('ytick', labelsize = font_size)
 
@@ -233,12 +239,49 @@ class Environment:
 
 				plt.plot([x1, x2], [y1, y2], color = 'cyan', linestyle =':', linewidth = 5)
 
+		# --- Show Monolith
+
+		if self.monolith.seen == True:
+			pos_x, pos_y = self.monolith.position
+			plt.plot(pos_x,pos_y, marker = "*", markersize = 1.5*font_size, color = 'gold') 
+
 		if image_file:
 			plt.savefig(image_file)
 
 		plt.close()
 	
 		
+class Monolith:
+	def __init__(self):
+		self.position = None
+		self.seen = False
+
+	def spawn(self, pos):
+		print('Monolith Appeared')
+
+		self.position = pos
+		self.seen = True
+
+	def disappear(self):
+		self.position = None
+		self.seen = False
+
+	def radiate(self, sim):
+
+		if self.seen == True:
+			dis = False
+
+			for agent_id, agent in sim.all_agents.items():
+				d = distance(self.position, agent.position) 
+				agent.actualization = agent.actualization + monolith_motivation / d
+				if d < 2:
+					dis = True
+
+			if dis == True:
+				self.disappear()
+				print('Monolith Found')
+
+
 
 
 

@@ -15,7 +15,7 @@ import gif
 
 from Agent import Sap, Sap_Interactions
 from Environment import Environment
-from Utils import Utils
+from Utils import Utils, Logger
 
 utils = Utils()
 normalize = utils.normalize
@@ -25,9 +25,13 @@ scale_val = utils.scale_val
 #--------------------------------
 
 parameter_file = 'Parameters.yaml'
+agent_log_dir = 'Agents_Logs'
 snap_dir = 'Snapshots'
 snap_file = snap_dir + '/Tick'
 gif_file = 'Evolution.gif'
+
+param = yaml.load(open(parameter_file), Loader = yaml.FullLoader)
+monolith_spawn_chance = param['monolith_spawn_chance']
 
 #--------------------------------
 
@@ -44,13 +48,13 @@ class Simulation:
 		except:
 			pass
 
-		print('Running simmulation for {} Ticks with {} Agents.'.format(self.time_units, self.no_agents))
-
 		self.parameter_file = parameter_file
 		self.all_agents = {}
 		self.agents_to_remove = []
 
 		self.sim_interactions = Sap_Interactions(self).simulate_interactions
+
+		self.time = 0
 
 
 	def add_agent(self, agent):
@@ -62,6 +66,9 @@ class Simulation:
 		else:	
 			agent.ident = 0
 
+		agent.log = Logger(agent_log_dir + '/Agent' + str(agent.ident) + '.txt')
+
+		print('New agent: Ag{}'.format(agent.ident))
 		self.all_agents[agent.ident] = agent
 
 
@@ -98,9 +105,21 @@ class Simulation:
 			agent.acquaint[oth_agent_id] = np.random.uniform(-1,1)
 
 
-	def run_sim_unit(self, t, visualize):
+	def run_sim_unit(self, visualize):
 
-		print('Sim Time Unit {}'.format(t), flush = True)
+		self.time += 1
+
+		print('Sim Time Unit {}'.format(self.time), flush = True)
+
+		# Monolith - external motivator 
+
+		if self.env.monolith.seen == False and np.random.uniform() < monolith_spawn_chance:
+			pos = np.random.randint(self.env.dimension_x), np.random.randint(self.env.dimension_y) 
+			self.env.monolith.spawn(pos)
+
+		self.env.monolith.radiate(self)
+
+		# Environment Parameters
 
 		self.env.update_danger(self)
 		self.env.regen_resource()
@@ -113,10 +132,11 @@ class Simulation:
 				self.agents_to_remove.append(agent_id)
 
 		self.delete_agents()
+
 		interacts = self.sim_interactions()
 
-		self.env.draw_environment(self, tick = t, interacts = interacts, image_file = snap_file + str(t) + '.png')
-		
+		self.env.draw_environment(self, tick = self.time, interacts = interacts, image_file = snap_file + str(self.time).zfill(3) + '.png')
+	
 
 	def animate_evolution(self):
 
@@ -131,8 +151,8 @@ class Simulation:
 
 			print('Recomposing animation ({} snapshots found)'.format(no_snaps), flush = True)
 			
-			for t in range(no_snaps):
-				file = snap_file + str(t + 1) + '.png'
+			files = glob.glob(snap_dir + '/*')
+			for file in files:
 				im = plt.imread(file)
 				images.append([plt.imshow(im)])
 
@@ -153,8 +173,9 @@ class Simulation:
 		start_time = time.time()
 
 		for t in range(self.time_units):
-			self.run_sim_unit(t + 1, visualize = visualize)
-			
+			self.run_sim_unit(visualize = visualize)
+
+					
 			if len(list(self.all_agents.keys())) == 0:
 				print('All Saps died')
 				break
@@ -167,15 +188,23 @@ class Simulation:
 
 if __name__ == '__main__':
 
+	log_file = 'Sim_Log.txt'
+	l = Logger(log_file)
+	l.reset()
+
+	sim = Simulation(parameter_file)
+
 	if not os.path.isfile(gif_file):
 		sim.animate_evolution()
 
 	else:
-		sim = Simulation(parameter_file)
-			
 		try:
 
 			files = glob.glob(snap_dir + '/*')
+			for f in files:
+				os.remove(f)
+
+			files = glob.glob(agent_log_dir + '/*')
 			for f in files:
 				os.remove(f)
 		except:
@@ -183,6 +212,8 @@ if __name__ == '__main__':
 
 		if not os.path.isdir(snap_dir):
 			os.mkdir(snap_dir)
+
+		print('Running simmulation for {} Ticks with {} Agents.'.format(sim.time_units, sim.no_agents))
 
 		sim.run_all(visualize = True)
 

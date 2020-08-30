@@ -1,12 +1,12 @@
 # Simulation Parameters
 
-no_agents : 20
-time_units : 70
+no_agents : 40
+time_units : 250
 
 # Environment Parameters
 
 dimension_x : 300
-dimension_y : 200
+dimension_y : 300
 
 danger_reduce : 1
 
@@ -14,21 +14,27 @@ env_max_danger : 1
 env_max_resource : 1
 env_max_resource_gen_rate : 0.3
 
+monolith_motivation : 10
+monolith_spawn_chance : 0.1
+
 # Agent Parameters
 
-res_to_invent : 1.5
-invent_to_energy : 3
+res_to_invent : 1
+invent_to_energy : 1
 
 ag_max_step : 3
 ag_max_interact_dist : 60
 
 ag_basic_needs : 0.1
-ag_move_needs : 0.3
+ag_move_needs : 0.2
 
 invent_fract : 0.5
 
-ag_random_death : 0
-ag_sight : 15
-ag_max_invent : 1
+ag_random_death : 0.001
+ag_sight : 70
+ag_max_invent : 2
 
-training_batch : 50
+training_batch : 15
+training_skip_steps : 5
+
+ag_mating_score : 0.6
