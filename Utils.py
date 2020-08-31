@@ -73,6 +73,10 @@ class Utils:
 			d_y = 0
 
 		return d_x, d_y
+
+	def one_hot(self, arr):
+		arr[np.argwhere( arr != arr.max() )] = 0
+		return arr
 	
 
 class Logger:
@@ -133,3 +137,10 @@ class Genetics:
 		return dna
 
 
+if __name__ == '__main__':
+
+	choice = np.array([0.8,0,0]).T
+	grads = np.array([0.3, 0.5, 0.2])
+	print(choice)
+	print(grads)
+	print(choice.dot(grads))

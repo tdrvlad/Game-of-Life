@@ -25,6 +25,7 @@ distance = utils.distance
 scale_val = utils.scale_val
 roulette_selection = utils.roulette_selection
 gradient = utils.gradient
+one_hot = utils.one_hot
 
 parameter_file = 'Parameters.yaml'
 log_file = 'Sim_Log.txt'
@@ -49,17 +50,31 @@ ag_max_invent = param['ag_max_invent']
 ag_max_interact_dist = param['ag_max_interact_dist']
 ag_mating_score = param['ag_mating_score']
 
+colab_bonus = param['colab_bonus']
+ag_blood_relation_thresh = param['ag_blood_relation_thresh']
+ag_compatibility_thresh = param['ag_compatibility_thresh']
+
 brain_inputs = 4
 brain_outputs = 5
 
 def agent_info(agent):
-	##
 	info = 'Sim: ' + str(agent.sim.time) \
 		+ ' | Invent:' + str(np.round(agent.inventory,1)) \
 		+ ' | Energy:' + str(np.round(agent.energy,1)) + ' | Soc:' +  str(np.round(agent.social,1)) \
 		+ ' | Act:' +  str(np.round(agent.actualization,1)) \
 		+ ' | Maslw:' + str(np.round(agent.actualization,1))
 	return info	
+
+def decision_info(agent):
+	info = '[Res: ' + str(np.round(agent.act[0],1)) \
+	+ ' Soc: ' + str(np.round(agent.act[1],1)) \
+	+ ' Expl: ' + str(np.round(agent.act[2],1)) \
+	+ ' Fight: ' + str(np.round(agent.act[3],1)) \
+	+ ' Collab: ' + str(np.round(agent.act[4],1)) \
+	+ ']'
+
+	return info
+		
 
 # ----------- Agent Class ----------- 
 
@@ -72,42 +87,58 @@ class Sap:
 		self.sim = sim
 		self.ident = None
 
-		# Genetics
+		# --- Genetics --- 
+		# Parameters that an agents inherits from parents
+
 		self.color = genetic.get_color(parent1, parent2)
 		self.dna = genetic.get_dna(parent1, parent2, brain_inputs, brain_outputs) # Architecture of the Neural Network
 
-		# Physiological Attributes
+		# --- Physiological Attributes --- 
+		# Explained in Agent definition
+
 		self.age = 0
 
 		self.energy = 1
 		self.social = 0.3
+		self.reputation = 0
+		
+		self.maslow = 0.5
 		self.actualization = 0.1
 
-		self.maslow = 0.5
+		# --- Physical Atttributes --- 
 
-		# Physical Atttributes
 		self.position = position
 		self.inventory = np.random.uniform(0.3,0.6)
 		self.max_invent = ag_max_invent
 		self.sight = ag_max_sight
 		self.shape = 1
 
-		# Social Attributes
-		self.acquaint = {}
-		self.offsprings = []
+		# Current movement step
+		self.d_x = np.random.uniform(-1,1)
+		self.d_y = np.random.uniform(-1,1)
 
-				
+		# --- Social Attributes --- 
+
+		self.acquaint = {}
+		self.family = {}
+		self.offsprings = []
+	
 		self.memory = []
 		self.max_memory = 3
+
+		# No of agents the agent is collaborating with at a time unit
+		self.colab = 0
 		
+		# --- Agent's decisional functions --- 
+
 		self.brain = Brain(no_inputs = brain_inputs, no_outputs = brain_outputs, architecture = self.dna)
 		
+		# Needed for comparing rewards
 		self.last_state = None
 		self.new_state = None
 		self.act = None
 
-		
-		
+			
 	def life_tick(self):
 		# Unit Time Run
 		
@@ -126,8 +157,6 @@ class Sap:
 		self.refresh_memory()
 
 		self.decide()
-
-		# print('Ag', self.ident, ' acquaintances: ', self.acquaint.items())
 
 		return self.stay_alive()
 
@@ -156,7 +185,7 @@ class Sap:
 
 		self.log.log(agent_info(self))
 
-		if self.energy < 0.1 or np.random.uniform() < ag_random_death * self.sim.env.danger[x,y]:
+		if self.energy < 0.1 or np.random.uniform() * self.age < ag_random_death * self.sim.env.danger[x,y]:
 			return 0 	# Dead
 		else:
 			return 1	# Alive
@@ -187,13 +216,14 @@ class Sap:
 		pos_x, pos_y = self.position # Agent's position
 		curr_resource = self.sim.env.resource[pos_x, pos_y] 
 
+		# Exception case: Interacting with an un-acquainted agent or modulating acquintance
 		if other_agent is None:
 			acq_score = 0.5
 		else:
 			if other_agent.ident not in self.acquaint.keys():
 				acq_score = 0.5
 			else:
-				acq_score = (self.acquaint[other_agent.ident] + 1) / 2 # normalized with moddle in 0.5
+				acq_score = (self.acquaint[other_agent.ident] + 1) / 2 # normalized with middle in 0.5
 		
 		self.new_state = np.array([curr_resource, self.inventory, self.energy, acq_score]).reshape(1, brain_inputs)
 		
@@ -212,10 +242,9 @@ class Sap:
 
 		self.last_state = self.new_state
 
-		self.act = self.brain.decide(self.new_state)
+		self.act = np.round(self.brain.decide(self.new_state),2)
 
-		info = '[Res: ' + str(np.round(self.act[0],1)) + ' Soc: ' + str(np.round(self.act[1],1)) + ' Expl: ' + str(np.round(self.act[2],1)) + ' Fight: ' + str(np.round(self.act[3],1)) + ' Collab: ' + str(np.round(self.act[4],1)) + ']'
-		self.log.log('Decision: ' + info ) 
+		self.log.log('Decision: ' + decision_info(self)) 
 
 	
 		if other_agent is None: # Non social decision
@@ -243,19 +272,30 @@ class Sap:
 
 		x, y = self.position
 
+		# Retain only the maximum the priorities
+		new_dir = np.round(one_hot(np.array([resource_priority, social_priority, explore_priority])),2)
+		new_dir_factor = new_dir.max()
+
+
 		# Compute resource <gradient>
-		d_res_x, d_res_y = gradient(self.sim.env.resource, x, y)
+		d_res_x, d_res_y = np.round(gradient(self.sim.env.resource, x, y),2)
 
 		# Compute social <gradient>
-		d_soc_x, d_soc_y = self.vecinity()
+		d_soc_x, d_soc_y = np.round(self.vecinity(),2)
 
-		# Exploration
-		d_rand_x, d_rand_y = np.random.uniform(low = -1, high = 1, size = 2)
+		# Exploration <gradient>
+		d_expl_x, d_expl_y = np.round(np.random.uniform(low = -1, high = 1, size = 2),2)
 
-		dir_x = d_res_x * resource_priority + d_soc_x * social_priority + d_rand_x * explore_priority
-		dir_y = d_res_y * resource_priority + d_soc_y * social_priority + d_rand_y * explore_priority
-
-		self.move(dir_x, dir_y)
+		self.d_x = np.round(self.d_x * ( 1 - new_dir_factor) + new_dir.T.dot(np.array([d_res_x, d_soc_x, d_expl_x])), 2) * ag_max_step
+		self.d_y = np.round(self.d_y * ( 1 - new_dir_factor) + new_dir.T.dot(np.array([d_res_y, d_soc_y, d_expl_y])), 2) * ag_max_step
+		
+		'''
+		print('MOVE({},{}) - Res:{}*({},{}), Soc:{}*({},{}), Expl:{}*({},{})' \
+			.format(self.d_x, self.d_y, resource_priority, d_res_x, d_res_y, social_priority, \
+			d_soc_x, d_soc_y, explore_priority, d_expl_x, d_expl_y), flush = True)
+		'''
+		
+		self.move()
 
 
 	def vecinity(self):
@@ -293,48 +333,48 @@ class Sap:
 		return vecinity_x, vecinity_y
 
 
-	def move(self, d_x, d_y):
+	def move(self):
 
-		try:
-			d_x *= self.energy / ag_move_needs
-			d_y *= self.energy / ag_move_needs
+		if abs(self.d_x) > ag_max_step:
+			self.d_x = ag_max_step * np.sign(self.d_x)
 
-			d_x = int(np.round(d_x))
-			d_y = int(np.round(d_y))
+		if abs(self.d_y) > ag_max_step:
+			self.d_y = ag_max_step * np.sign(self.d_y)
 
-			#print('dx: ', d_x, ', dy: ', d_y)
-			
-			if abs(d_x) > ag_max_step:
-				d_x = ag_max_step * np.sign(d_x)
-
-			if abs(d_y) > ag_max_step:
-				d_y = ag_max_step * np.sign(d_y)
-
-			pos_x, pos_y = self.position
-			
-			# Make sure agent stays in environment boundries
-			if pos_x + d_x >= self.sim.env.dimension_x:
-				pos_x = self.sim.env.dimension_x - 1 
-			elif pos_x + d_x < 0:
-				pos_x = 0
-			else:
-				pos_x += d_x
-
-			if pos_y + d_y >= self.sim.env.dimension_y:
-				pos_y = self.sim.env.dimension_y - 1
-			elif pos_y + d_y < 0:
-				pos_y = 0
-			else:
-				pos_y += d_y
-
-
-
-			self.position = (pos_x, pos_y)
-			self.energy -= math.sqrt(d_x ** 2 + d_y ** 2) * ag_move_needs
 		
-		except:
-			pass
+		d_x = self.d_x * (self.energy / ag_move_needs)
+		d_y = self.d_y * (self.energy / ag_move_needs)
+
+		d_x = int(np.round(d_x))
+		d_y = int(np.round(d_y))
+
+			
+		pos_x, pos_y = self.position
 		
+		# Make sure agent stays in environment boundries
+		if pos_x + d_x >= self.sim.env.dimension_x:
+			pos_x = self.sim.env.dimension_x - 1 
+		elif pos_x + d_x < 0:
+			pos_x = 0
+		else:
+			pos_x += d_x
+
+		if pos_y + d_y >= self.sim.env.dimension_y:
+			pos_y = self.sim.env.dimension_y - 1
+		elif pos_y + d_y < 0:
+			pos_y = 0
+		else:
+			pos_y += d_y
+
+
+		traveled = math.sqrt(d_x ** 2 + d_y ** 2)
+
+		self.position = (pos_x, pos_y)
+		self.energy -= traveled * ( ag_move_needs / (colab_bonus * self.colab + 1))
+	
+		# Note: Collaboration makes travelling demand less resource
+
+
 
 	def eat(self):
 	
@@ -348,9 +388,10 @@ class Sap:
 	def gather_res(self):
 		# Arguable formula
 	
-		# Gathering resource is more efficient while near collaborating agents
-		self.inventory += self.sim.env.consume_resource(self) * res_to_invent
+		consumed = self.sim.env.consume_resource(self)
+		self.inventory += consumed * res_to_invent * (colab_bonus * self.colab + 1)
 
+		# Note Collaboration makes resource gathering more efficient
 		
 
 	# ------- Social decisions and actions ------- 
@@ -372,7 +413,7 @@ class Sap:
 				self.acquaint[about_agent_id] = round(score * self.acquaint[from_agent_id],2)
 
 
-	def train(self,agent, iterations = 10):
+	def train(self ,agent, iterations = 10):
 
 		self.brain.mirror_training(agent.brain, batches = 10, epochs = 5)
 
@@ -437,29 +478,35 @@ class Sap:
 		if no:
 			rep /= no
 
-		return round(rep,2)
+		self.reputation = scale_val(round(rep,2), self.sim.env.max_reputation, 1)
 
 
 	def update_actualization(self):
-		
+
+	
 		# Arguable formula
-		self.actualization = (self.actualization + self.update_reputation()) / 2
 
-		for ch_id in self.offsprings:
+		if self.sim.env.monolith.seen == False:
+			
+			self.actualization = (self.actualization + self.reputation) / 2
 
-			if ch_id not in self.sim.all_agents.keys():
-				# Child is dead
-				self.actualization = 0
-				self.offsrpings.remove(ch_id)
-			else:
-				# Parent wants to maximize offspring Maslow Score
-				self.actualization = (self.actualization + self.sim.all_agents[ch_id].maslow) / 2
+			for ch_id in self.offsprings:
 
-		# Rescale value to 0-1
+				if ch_id not in self.sim.all_agents.keys():
+					# Child is dead
+					self.actualization = 0
+					self.offsrpings.remove(ch_id)
+				else:
+					# Parent wants to maximize offspring Maslow Score
+					self.actualization = (self.actualization + self.sim.all_agents[ch_id].maslow) / 2
+
+			# If the monolith is presemt, actualization is getting closer to it
+
+
+		
 		self.actualization = scale_val(self.actualization, self.sim.env.max_actualization, 1)
 
 	
-
 	def update_acquaint(self, base = 2):
 
 		for mem in self.memory:
@@ -500,9 +547,31 @@ class Sap:
 			pass
 			
 
+	def update_family(self, agent, relation):
+
+		self.family[agent.ident] = relation
+		for oth_agent_id, oth_relation in agent.get_family().items():
+			self.add_family_member(oth_agent_id, relation * oth_relation)
+
+
+	def add_family_member(self, agent_id, relation):
+	
+		if agent_id not in self.family.keys():
+			self.family[agent_id] = relation
+		else:
+			if relation > self.family[agent_id]:
+				self.family[agent_id] = relation
+
+
+	def get_family(self):
+		#
+		return self.family
+
+
 	def update_color(self):
 		# Updates color of agent as a means of social ignalling:
 		# Cooperating agents will converge to simmilar colors
+		
 		for agent_id, score in self.acquaint.items():
 
 			try:
@@ -512,10 +581,10 @@ class Sap:
 
 				dist = distance(self.position, agent.position) + 0.1
 				if dist:
-					if dist < self.sight:
+					if dist < self.sight and abs(score) > 0.5:
 						
 						# Argueable formula
-						color_delta = [oth_c - my_c for oth_c, my_c in zip(oth_color, self.color)]
+						color_delta = [(oth_c - my_c) / 255 for oth_c, my_c in zip(oth_color, self.color)]
 						
 						# Arguable formula
 						#self.color = [my_c + c_delta * score / oth_c for my_c, c_delta, oth_c in zip(self.color, color_delta, agent.color)]
@@ -538,7 +607,11 @@ class Sap_Interactions:
 
 		self.sim = sim
 
+
 	def simulate_interactions(self):
+
+		for ag_id, agent in self.sim.all_agents.items():
+			agent.colab = 0
 
 		interacts = []
 		agents_ids = list(self.sim.all_agents.keys())
@@ -578,6 +651,7 @@ class Sap_Interactions:
 
 		return pairs
 
+
 	def ag_interact(self, agent1_id, agent2_id):
 
 		agent1 = self.sim.all_agents[agent1_id]
@@ -592,7 +666,7 @@ class Sap_Interactions:
 			if f_1 > c_1 or f_2 > c_2:
 				self.fight(agent1, f_1, agent2, f_2)
 			else:
-				if c_1 * c_2 > ag_mating_score: # Arguable
+				if c_1 * c_2 > ag_mating_score and self.mating_compatibility(agent1, agent2):
 					self.mate(agent1, agent2)
 				else:
 					self.collaborate(agent1, agent2)
@@ -635,8 +709,10 @@ class Sap_Interactions:
 		agent2.log.log('Fought with AG{}'.format(agent1.ident))
 	
 	
-
 	def collaborate(self, agent1, agent2):
+
+		agent1.colab = 1
+		agent2.colab = 2
 
 		if agent1.maslow > agent2.maslow:
 			agent1.train(agent2)
@@ -654,7 +730,6 @@ class Sap_Interactions:
 		agent1.log.log('Collaborated with AG{}'.format(agent2.ident))
 		agent2.log.log('Collaborated with AG{}'.format(agent1.ident))
 	
-
 
 	def mate(self, agent1, agent2):
 		
@@ -679,7 +754,73 @@ class Sap_Interactions:
 		agent1.log.log('Mated with AG{}'.format(agent2.ident))
 		agent2.log.log('Mated with AG{}'.format(agent1.ident))
 
-		# Add actualization of parents to include maslow score of child
+		# Update family
+		# Parent-child relation is 0.9 (1 would not vanish through family tree)
+		newborn.update_family(agent1, 0.9)
+		newborn.update_family(agent2, 0.9)
+
+		agent1.add_family_member(newborn.ident, 0.9)
+		agent2.add_family_member(newborn.ident, 0.9)
+
+		# Note: Parents actualization scores include Maslow score of child
+
+	# ------- Utils ------- 
+
+	def mating_compatibility(self, agent1, agent2):
+
+		rel1 = 0
+		if agent1.ident in agent2.family.keys():
+			rel1 = agent2.family[agent1.ident]
+
+		rel2 = 0
+		if agent2.ident in agent1.family.keys():
+			rel2 = agent1.family[agent2.ident]
+
+		related = max(rel1, rel2)
+
+		compat = self.compute_agents_simmilarity(agent1, agent2)
+
+		if related < ag_blood_relation_thresh and compat > ag_compatibility_thresh:
+			return True
+		else:
+			return False
+
+
+	def compute_agents_simmilarity(self, agent1, agent2, batches = 10):
+		
+		# Computes decisional distance of agents
+		
+		diff = 0 
+
+		print('Computing Ag{} and Ag{} simmilaity'.format(agent1.ident, agent2.ident))
+
+		for i in range(batches):
+
+			diff += self.agents_decision_distance(agent1, agent2)
+
+		diff /= batches
+
+		return diff
+
+
+	def agents_decision_distance(self, agent1, agent2):
+		# Computes difference between 2 agents given a random input instance
+
+		inp = np.random.rand(agent1.brain.no_inputs).reshape(1, agent1.brain.no_inputs)
+
+		resp1 = agent1.brain.one_batch_action(inp)
+		resp2 = agent2.brain.one_batch_action(inp)
+
+		diff = np.sum(abs(resp1 - resp2))
+
+		return diff
+
+
+	def instance_decision_distance(self, agent, inp, out):
+
+		resp = agent.brain.one_batch_action(inp)
+
+		return abs(resp - out)
 
 
 

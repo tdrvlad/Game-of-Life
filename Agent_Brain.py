@@ -42,7 +42,7 @@ class Brain:
 		self.epsilon = 5.0
 		self.epsilon_min = 0.01
 		self.epsilon_decay = 0.995
-		self.learning_rate = 0.1
+		self.learning_rate = 0.05
 		self.tau = .05
 
 		self.model = self.create_model()
@@ -121,19 +121,7 @@ class Brain:
 			return np.random.uniform(0, 1, self.no_outputs)
 		return self.model.predict(state)[0]  
 
-
-	def save_model(self, file):
-		self.model.save(file)
-
-
-	def summary(self):
-		self.model.summary()
-
-
 	def mirror_training(self, oth_brain, batches, epochs): 
-		model = self.model
-		oth_model = oth_brain.model
-
 		#Build training Data
 
 		inputs = []
@@ -141,8 +129,32 @@ class Brain:
 
 		for i in range(batches):
 			inp = np.random.rand(self.no_inputs).reshape(1, self.no_inputs)
-			target = model.predict(inp)
-			oth_model.fit(inp, target, epochs = epochs, verbose = 0)
+			target = self.one_batch_action(inp)
+			oth_brain.one_batch_train(inp, target, epochs = epochs)
+
+
+	def one_batch_action(self, input):
+		# Get the output corresponding to an instance of data
+		return self.model.predict(input)
+
+
+	def one_batch_train(self, inp, out, epochs = 5):
+		# Train a model with a single instance of data
+		self.model.fit(inp, out, epochs = epochs, verbose = 0)
+
+
+	def save_model(self, file):
+		# Save model
+		self.model.save(file)
+
+
+	def load_model(self, file):
+		self.model = tf.keras.models.load_model(file)
+
+
+	def summary(self):
+		# Get model summary
+		self.model.summary()
 
 
 if __name__ == '__main__':

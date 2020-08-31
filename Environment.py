@@ -84,6 +84,7 @@ class Environment:
 		self.max_maslow = 1
 		self.max_acq = 1
 		self.max_actualization = 1
+		self.ax_reputation = 1
 
 		self.max_resource = self.resource.sum()
 
@@ -95,6 +96,7 @@ class Environment:
 		self.max_reputation = 0
 		self.max_maslow = 0
 		self.max_actualization = 0
+		self.max_reputation = 0
 
 		for agent_id, agent in sim.all_agents.items():
 						
@@ -112,6 +114,9 @@ class Environment:
 
 			if agent.actualization > self.max_actualization:
 				self.max_actualization = agent.actualization
+
+			if agent.reputation > self.max_reputation:
+				self.max_reputation = agent.reputation
 
 			for ag_id, score in agent.acquaint.items():
 				if abs(score) > self.max_acq:
@@ -164,7 +169,7 @@ class Environment:
 		plt.plot(pos_x,pos_y, marker = ag_shapes[agent.shape], markersize = 0.8*font_size, color = agent.color) 
 		
 		agent_info = 'En: ' + str(int(agent.energy * 100)) + '% \n' + 'Inv: ' + str(int(agent.inventory / ag_max_invent * 100)) + '%'
-		plt.text(pos_x + 3 ,pos_y + 4, agent_info, fontsize = 0.4 * font_size )
+		plt.text(pos_x + 3 ,pos_y + 4, agent_info, fontsize = 0.65 * font_size )
 
 
 	def draw_relationship(self, agent_src, agent_dst, score):
@@ -273,7 +278,7 @@ class Monolith:
 
 			for agent_id, agent in sim.all_agents.items():
 				d = distance(self.position, agent.position) 
-				agent.actualization = agent.actualization + monolith_motivation / d
+				agent.actualization = monolith_motivation / d
 				if d < 2:
 					dis = True
 

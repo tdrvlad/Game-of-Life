@@ -113,7 +113,8 @@ class Simulation:
 
 		# Monolith - external motivator 
 
-		if self.env.monolith.seen == False and np.random.uniform() < monolith_spawn_chance:
+		#if self.env.monolith.seen == False and np.random.uniform() < monolith_spawn_chance:
+		if self.env.monolith.seen == False and self.time > 50:
 			pos = np.random.randint(self.env.dimension_x), np.random.randint(self.env.dimension_y) 
 			self.env.monolith.spawn(pos)
 
@@ -137,6 +138,26 @@ class Simulation:
 
 		self.env.draw_environment(self, tick = self.time, interacts = interacts, image_file = snap_file + str(self.time).zfill(3) + '.png')
 	
+
+	def run_all(self, visualize = False):
+
+		self.init_sim()
+
+		start_time = time.time()
+
+		for t in range(self.time_units):
+			self.run_sim_unit(visualize = visualize)
+
+					
+			if len(list(self.all_agents.keys())) == 0:
+				print('All Saps died')
+				break
+
+		print('Run time: %s seconds' % (time.time() - start_time), flush = True)
+
+		if visualize:
+			self.animate_evolution()
+
 
 	def animate_evolution(self):
 
@@ -165,25 +186,6 @@ class Simulation:
 			#plt.show()
 		except:
 			pass
-
-	def run_all(self, visualize = False):
-
-		self.init_sim()
-
-		start_time = time.time()
-
-		for t in range(self.time_units):
-			self.run_sim_unit(visualize = visualize)
-
-					
-			if len(list(self.all_agents.keys())) == 0:
-				print('All Saps died')
-				break
-
-		print('Run time: %s seconds' % (time.time() - start_time), flush = True)
-
-		if visualize:
-			self.animate_evolution()
 
 
 if __name__ == '__main__':
