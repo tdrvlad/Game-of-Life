@@ -1,7 +1,7 @@
 # Simulation Parameters
 
-no_agents : 3
-time_units : 250
+no_agents : 35
+time_units : 300
 
 # Environment Parameters
 
@@ -23,7 +23,7 @@ res_to_invent : 1
 invent_to_energy : 1
 
 ag_max_step : 3
-ag_max_interact_dist : 30
+ag_max_interact_dist : 40
 
 ag_basic_needs : 0.2 
 ag_move_needs : 0.5
@@ -31,7 +31,7 @@ ag_move_needs : 0.5
 invent_fract : 0.5
 
 ag_random_death : 0.001
-ag_sight : 70 # space units
+ag_sight : 80 # space units
 ag_max_invent : 2
 
 training_batch : 15

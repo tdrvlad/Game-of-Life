@@ -94,7 +94,8 @@ class Brain:
 			action = np.rint(action).astype(int)
 			
 			target[0][action] = reward
-			
+
+			print('Target: {} / Action: {}'.format(target, action))
 			Q_future = max(self.model.predict(new_state)[0])
 			target[0][action] = reward + Q_future * self.gamma
 			

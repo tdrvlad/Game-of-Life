@@ -242,6 +242,7 @@ class Sap:
 
 		self.last_state = self.new_state
 
+		print('Ag{} action: {}'.format(self.ident, self.act))
 		self.act = np.round(self.brain.decide(self.new_state),2)
 
 		self.log.log('Decision: ' + decision_info(self)) 
@@ -286,14 +287,14 @@ class Sap:
 		# Exploration <gradient>
 		d_expl_x, d_expl_y = np.round(np.random.uniform(low = -1, high = 1, size = 2),2)
 
-		self.d_x = np.round(self.d_x * ( 1 - new_dir_factor) + new_dir.T.dot(np.array([d_res_x, d_soc_x, d_expl_x])), 2) * ag_max_step
-		self.d_y = np.round(self.d_y * ( 1 - new_dir_factor) + new_dir.T.dot(np.array([d_res_y, d_soc_y, d_expl_y])), 2) * ag_max_step
+		self.d_x = np.round(self.d_x * ( 1 - new_dir_factor) + new_dir.T.dot(np.array([d_res_x, d_soc_x, d_expl_x])) * ag_max_step, 2)
+		self.d_y = np.round(self.d_y * ( 1 - new_dir_factor) + new_dir.T.dot(np.array([d_res_y, d_soc_y, d_expl_y])) * ag_max_step, 2)
 		
-		'''
+		
 		print('MOVE({},{}) - Res:{}*({},{}), Soc:{}*({},{}), Expl:{}*({},{})' \
 			.format(self.d_x, self.d_y, resource_priority, d_res_x, d_res_y, social_priority, \
 			d_soc_x, d_soc_y, explore_priority, d_expl_x, d_expl_y), flush = True)
-		'''
+		
 		
 		self.move()
 
@@ -318,15 +319,18 @@ class Sap:
 			except:
 				pass
 
-		if vecinity_x and vecinity_y:
-			
+		try:
+
 			maxim = max(abs(vecinity_x), abs(vecinity_y))
 			
 			if maxim > 0:
 				vecinity_x /= maxim
 				vecinity_y /= maxim
 
-		else:
+			vecinity_x = int(np.round(vecinity_x))
+			vecinity_y = int(np.round(vecinity_y))
+
+		except:
 			vecinity_x = 0
 			vecinity_y = 0
 
@@ -334,6 +338,9 @@ class Sap:
 
 
 	def move(self):
+
+		self.d_x *= np.random.uniform(0.95,1.05)
+		self.d_y *= np.random.uniform(0.95,1.05)
 
 		if abs(self.d_x) > ag_max_step:
 			self.d_x = ag_max_step * np.sign(self.d_x)
@@ -353,18 +360,18 @@ class Sap:
 		
 		# Make sure agent stays in environment boundries
 		if pos_x + d_x >= self.sim.env.dimension_x:
-			pos_x = self.sim.env.dimension_x - 1 
+			d_x *= -1
 		elif pos_x + d_x < 0:
-			pos_x = 0
-		else:
-			pos_x += d_x
+			d_x *= -1
+		
+		pos_x += d_x
 
 		if pos_y + d_y >= self.sim.env.dimension_y:
-			pos_y = self.sim.env.dimension_y - 1
+			d_y *= -1
 		elif pos_y + d_y < 0:
-			pos_y = 0
-		else:
-			pos_y += d_y
+			d_y *= -1
+		
+		pos_y += d_y
 
 
 		traveled = math.sqrt(d_x ** 2 + d_y ** 2)
@@ -711,8 +718,8 @@ class Sap_Interactions:
 	
 	def collaborate(self, agent1, agent2):
 
-		agent1.colab = 1
-		agent2.colab = 2
+		#agent1.colab = 1
+		#agent2.colab = 2
 
 		if agent1.maslow > agent2.maslow:
 			agent1.train(agent2)
@@ -778,27 +785,30 @@ class Sap_Interactions:
 
 		related = max(rel1, rel2)
 
-		compat = self.compute_agents_simmilarity(agent1, agent2)
+		diff = self.compute_agents_difference(agent1, agent2)
 
-		if related < ag_blood_relation_thresh and compat > ag_compatibility_thresh:
+		if related < ag_blood_relation_thresh and diff < ag_compatibility_thresh:
+			print('Ag{} and Ag{} compatible for mating.'.format(agent1.ident, agent2.ident))
 			return True
+
 		else:
+			print('Ag{} and Ag{} NOT compatible for mating.'.format(agent1.ident, agent2.ident))
 			return False
 
 
-	def compute_agents_simmilarity(self, agent1, agent2, batches = 10):
+	def compute_agents_difference(self, agent1, agent2, batches = 10):
 		
 		# Computes decisional distance of agents
 		
 		diff = 0 
-
-		print('Computing Ag{} and Ag{} simmilaity'.format(agent1.ident, agent2.ident))
 
 		for i in range(batches):
 
 			diff += self.agents_decision_distance(agent1, agent2)
 
 		diff /= batches
+
+		print('Simmilarity result for Ag{} and Ag{}: {}'.format(agent1.ident, agent2.ident, np.round(diff,2)))
 
 		return diff
 

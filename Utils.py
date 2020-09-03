@@ -48,7 +48,7 @@ class Utils:
 		# OX Gradient
 		d_x = 0
 		try: 
-			d_x += arr[x + 1][y]
+			d_x += arr[x + 1, y]
 		except:
 			pass
 		try:

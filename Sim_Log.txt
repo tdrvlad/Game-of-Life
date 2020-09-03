@@ -1,0 +1,23 @@
+Simmulation Log: 
+Ag0 (0.7) fought Ag29 (0.8)
+Ag13 (0.4) fought Ag15 (0.8)
+Ag17 (0.4) fought Ag27 (0.8)
+Ag4 (1.0) fought Ag25 (0.4)
+Ag6 (0.6) fought Ag21 (0.6)
+Ag1 (0.9) fought Ag24 (0.7)
+Ag9 (0.7) fought Ag32 (0.4)
+Ag8 helped Ag34
+Ag17 (0.4) fought Ag27 (1.0)
+Ag4 (0.8) fought Ag25 (0.4)
+Ag8 (0.6) fought Ag34 (0.1)
+Ag10 helped Ag28
+Ag2 (0.7) fought Ag30 (0.9)
+Ag10 (0.8) fought Ag28 (0.3)
+Ag4 (0.8) fought Ag25 (0.8)
+Ag1 (0.3) fought Ag24 (0.8)
+Ag8 (0.3) fought Ag34 (0.8)
+Ag10 (0.9) fought Ag28 (0.3)
+Ag9 (0.9) fought Ag32 (0.8)
+Ag0 (0.8) fought Ag29 (0.8)
+Ag17 helped Ag27
+Ag4 (0.3) fought Ag25 (1.0)
