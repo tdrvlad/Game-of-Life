@@ -166,7 +166,7 @@ class Environment:
 	def draw_agent(self, agent):
 
 		pos_x, pos_y = agent.position
-		plt.plot(pos_x,pos_y, marker = ag_shapes[agent.shape], markersize = 0.8*font_size, color = agent.color) 
+		plt.plot(pos_x,pos_y, marker = ag_shapes[agent.shape], markersize = 1.3*font_size, color = agent.color) 
 		
 		agent_info = 'En: ' + str(int(agent.energy * 100)) + '% \n' + 'Inv: ' + str(int(agent.inventory / ag_max_invent * 100)) + '%'
 		plt.text(pos_x + 3 ,pos_y + 4, agent_info, fontsize = 0.65 * font_size )
@@ -198,7 +198,7 @@ class Environment:
 			src_x, src_y = agent_src.position 
 			dst_x, dst_y = agent_dst.position
 
-			plt.plot([dst_x, src_x], [dst_y, src_y], color = (r,g,b, alph), linestyle =':', linewidth=4)
+			plt.plot([dst_x, src_x], [dst_y, src_y], color = (r,g,b, alph), linestyle =':', linewidth=5)
 
 
 	def draw_environment(self, sim, interacts, image_file = None, tick = None):
@@ -217,12 +217,14 @@ class Environment:
 		# --- Show resource and danger --- 
 		res = plt.imshow(self.resource.T, cmap = 'Greens', alpha = 1)
 		dng = plt.imshow(self.danger.T, cmap = 'Reds', alpha = 0.4)
-
+	
 		if tick is not None:
 			plt.text(3 ,-5, 'Tick: {}'.format(tick), fontsize = font_size)
 
+		'''
 		plt.colorbar(res).set_label('Resource')
 		plt.colorbar(dng).set_label('Danger')
+		'''
 		
 		# --- Show agents --- 
 		for agent_id, agent in sim.all_agents.items():
@@ -242,13 +244,13 @@ class Environment:
 				x1, y1 = sim.all_agents[agent_id].position
 				x2, y2 = sim.all_agents[oth_agent_id].position
 
-				plt.plot([x1, x2], [y1, y2], color = 'cyan', linestyle =':', linewidth = 5)
+				plt.plot([x1, x2], [y1, y2], color = 'cyan', linestyle =':', linewidth = 7)
 
 		# --- Show Monolith
 
 		if self.monolith.seen == True:
 			pos_x, pos_y = self.monolith.position
-			plt.plot(pos_x,pos_y, marker = "*", markersize = 1.5*font_size, color = 'gold') 
+			plt.plot(pos_x,pos_y, marker = "*", markersize = 2*font_size, color = 'gold') 
 
 		if image_file:
 			plt.savefig(image_file)

@@ -242,7 +242,8 @@ class Sap:
 
 		self.last_state = self.new_state
 
-		print('Ag{} action: {}'.format(self.ident, self.act))
+		#print('Ag{} action: {}'.format(self.ident, self.act))
+		
 		self.act = np.round(self.brain.decide(self.new_state),2)
 
 		self.log.log('Decision: ' + decision_info(self)) 
@@ -290,11 +291,11 @@ class Sap:
 		self.d_x = np.round(self.d_x * ( 1 - new_dir_factor) + new_dir.T.dot(np.array([d_res_x, d_soc_x, d_expl_x])) * ag_max_step, 2)
 		self.d_y = np.round(self.d_y * ( 1 - new_dir_factor) + new_dir.T.dot(np.array([d_res_y, d_soc_y, d_expl_y])) * ag_max_step, 2)
 		
-		
+		'''
 		print('MOVE({},{}) - Res:{}*({},{}), Soc:{}*({},{}), Expl:{}*({},{})' \
 			.format(self.d_x, self.d_y, resource_priority, d_res_x, d_res_y, social_priority, \
 			d_soc_x, d_soc_y, explore_priority, d_expl_x, d_expl_y), flush = True)
-		
+		'''
 		
 		self.move()
 
@@ -378,6 +379,10 @@ class Sap:
 
 		self.position = (pos_x, pos_y)
 		self.energy -= traveled * ( ag_move_needs / (colab_bonus * self.colab + 1))
+		
+		if self.energy < 0:
+			self.energy = 0
+			self.eat()
 	
 		# Note: Collaboration makes travelling demand less resource
 
@@ -385,6 +390,9 @@ class Sap:
 
 	def eat(self):
 	
+		if self.inventory < 0:
+			self.inventory = 0
+
 		self.energy += self.inventory / 2 * invent_to_energy
 		
 		# Value validation
@@ -696,9 +704,9 @@ class Sap_Interactions:
 		winner = roulette_selection(options)
 
 		# Both agents lose energy 
-		agent1.energy -= f1
-		agent2.energy -= f2
-
+		agent1.energy /= (1 + f1)
+		agent2.energy /= (1 + f2)
+		
 		# Winner takes part of the loser's inventory
 		def fight_result(winner, loser):
 			winner.inventory += loser.inventory * invent_fract

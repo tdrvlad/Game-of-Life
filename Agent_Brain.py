@@ -95,7 +95,7 @@ class Brain:
 			
 			target[0][action] = reward
 
-			print('Target: {} / Action: {}'.format(target, action))
+			print('Target: {} / Action: {} / Reward: {}'.format(target[0], action, reward))
 			Q_future = max(self.model.predict(new_state)[0])
 			target[0][action] = reward + Q_future * self.gamma
 			

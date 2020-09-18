@@ -135,7 +135,6 @@ class Simulation:
 		self.delete_agents()
 
 		interacts = self.sim_interactions()
-
 		self.env.draw_environment(self, tick = self.time, interacts = interacts, image_file = snap_file + str(self.time).zfill(3) + '.png')
 	
 
